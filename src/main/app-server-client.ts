@@ -98,7 +98,7 @@ export class AppServerClient implements RpcClientLike {
       clientInfo: {
         name: 'codex_threadbox',
         title: 'Threadbox for Codex',
-        version: '0.1.0'
+        version: '0.1.1'
       }
     })
     this.sendNotification('initialized', {})

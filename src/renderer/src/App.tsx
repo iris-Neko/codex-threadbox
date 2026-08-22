@@ -202,7 +202,7 @@ export default function App(): React.JSX.Element {
           </span>
           <div>
             <h1>{t('appName')}</h1>
-            <span className="brand__version">v0.1.0</span>
+            <span className="brand__version">v0.1.1</span>
           </div>
         </div>
         <div className="header-stats" aria-live="polite">

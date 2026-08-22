@@ -2,7 +2,7 @@ import { _electron as electron } from 'playwright'
 import { access, mkdtemp, readdir, rm } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { delimiter, join, resolve } from 'node:path'
 
 async function firstExisting(candidates) {
   for (const candidate of candidates) {
@@ -46,6 +46,24 @@ async function packagedExecutable() {
   )
 }
 
+async function runPackagedSmoke(label, environment, verify) {
+  const userData = await mkdtemp(join(tmpdir(), `threadbox-packaged-${label}-`))
+  const application = await electron.launch({
+    executablePath,
+    args: ['--lang=en-US', `--user-data-dir=${userData}`],
+    env: environment
+  })
+
+  try {
+    const window = await application.firstWindow()
+    await verify(window)
+    process.stdout.write(`Packaged ${label} smoke test passed: ${executablePath}\n`)
+  } finally {
+    await application.close()
+    await rm(userData, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  }
+}
+
 const executablePath = await packagedExecutable()
 const fakeCli = resolve(
   'tests',
@@ -53,22 +71,35 @@ const fakeCli = resolve(
   'bin',
   process.platform === 'win32' ? 'codex.cmd' : 'codex'
 )
-const userData = await mkdtemp(join(tmpdir(), 'threadbox-packaged-'))
-const application = await electron.launch({
-  executablePath,
-  args: ['--lang=en-US', `--user-data-dir=${userData}`],
-  env: {
+
+await runPackagedSmoke(
+  'fake-cli',
+  {
     ...process.env,
     CODEX_BINARY: fakeCli,
     THREADBOX_TEST_DISABLE_PROCESS_SCAN: '1'
-  }
-})
+  },
+  (window) =>
+    window.getByText('Desktop release workflow', { exact: true }).waitFor({ timeout: 20_000 })
+)
 
+const codexHome = await mkdtemp(join(tmpdir(), 'threadbox-packaged-codex-home-'))
 try {
-  const window = await application.firstWindow()
-  await window.getByText('Desktop release workflow', { exact: true }).waitFor({ timeout: 20_000 })
-  process.stdout.write(`Packaged application smoke test passed: ${executablePath}\n`)
+  const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === 'path') ?? 'PATH'
+  const realCliEnvironment = {
+    ...process.env,
+    CODEX_HOME: codexHome,
+    THREADBOX_TEST_DISABLE_PROCESS_SCAN: '1'
+  }
+  delete realCliEnvironment.CODEX_BINARY
+  realCliEnvironment[pathKey] = [
+    resolve('node_modules', '.bin'),
+    realCliEnvironment[pathKey] ?? ''
+  ].join(delimiter)
+
+  await runPackagedSmoke('real-path-cli', realCliEnvironment, (window) =>
+    window.getByText('Codex 0.149.0', { exact: true }).waitFor({ timeout: 20_000 })
+  )
 } finally {
-  await application.close()
-  await rm(userData, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  await rm(codexHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 }

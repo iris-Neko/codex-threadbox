@@ -1,6 +1,7 @@
 import spawn from 'cross-spawn'
 import type { ChildProcess, SpawnOptions } from 'node:child_process'
-import { extname } from 'node:path'
+import { existsSync } from 'node:fs'
+import { delimiter, extname, isAbsolute, join } from 'node:path'
 import semver from 'semver'
 import type { EnvironmentStatus } from '../shared/contracts'
 import type { SettingsStore } from './settings-store'
@@ -41,9 +42,16 @@ function capture(command: string, args: string[], timeoutMs = 8_000): Promise<Ca
     })
     let stdout = ''
     let stderr = ''
+    let settled = false
+    const finish = (callback: () => void): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      callback()
+    }
     const timer = setTimeout(() => {
       child.kill()
-      reject(new Error('The Codex CLI version check timed out.'))
+      finish(() => reject(new Error('The Codex CLI version check timed out.')))
     }, timeoutMs)
 
     child.stdout?.on('data', (chunk: Buffer) => {
@@ -53,19 +61,64 @@ function capture(command: string, args: string[], timeoutMs = 8_000): Promise<Ca
       if (stderr.length < 32_768) stderr += chunk.toString('utf8')
     })
     child.once('error', (error) => {
-      clearTimeout(timer)
-      reject(error)
+      finish(() => reject(error))
     })
-    child.once('exit', (code) => {
-      clearTimeout(timer)
-      resolve({ stdout, stderr, code })
+    child.once('close', (code) => {
+      finish(() => resolve({ stdout, stderr, code }))
     })
   })
 }
 
-function parseVersion(output: string): string | null {
-  const match = output.match(/\b(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\b/)
+export function parseCodexVersion(output: string): string | null {
+  const match = output.match(
+    /\bv?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)\b/
+  )
   return match?.[1] && semver.valid(match[1]) ? match[1] : null
+}
+
+function uniquePaths(paths: string[]): string[] {
+  const seen = new Set<string>()
+  return paths.filter((path) => {
+    const key = process.platform === 'win32' ? path.toLowerCase() : path
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function windowsCommandNames(command: string, env: NodeJS.ProcessEnv): string[] {
+  if (extname(command)) return [command]
+  const extensions = (env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD')
+    .split(';')
+    .map((extension) => extension.trim())
+    .filter((extension) => /^\.(?:com|exe|bat|cmd)$/i.test(extension))
+  return [...new Set(extensions.map((extension) => extension.toLowerCase()))].map(
+    (extension) => `${command}${extension}`
+  )
+}
+
+export function resolveCodexCandidates(
+  command: string,
+  env: NodeJS.ProcessEnv = process.env
+): string[] {
+  const trimmed = command.trim()
+  if (isAbsolute(trimmed) || trimmed.includes('/') || trimmed.includes('\\')) return [trimmed]
+
+  const directories = (env.PATH ?? '')
+    .split(delimiter)
+    .map((directory) => directory.trim().replace(/^"|"$/g, ''))
+    .filter(Boolean)
+
+  if (process.platform === 'win32' && trimmed.toLowerCase() === 'codex') {
+    if (env.APPDATA) directories.push(join(env.APPDATA, 'npm'))
+    if (env.USERPROFILE) directories.push(join(env.USERPROFILE, '.local', 'bin'))
+  }
+
+  const names = process.platform === 'win32' ? windowsCommandNames(trimmed, env) : [trimmed]
+  const matches = uniquePaths(directories).flatMap((directory) =>
+    names.map((name) => join(directory, name)).filter((candidate) => existsSync(candidate))
+  )
+  return uniquePaths(matches.length > 0 ? matches : [trimmed])
 }
 
 function readyStatus(command: string, version: string, externalCodexProcesses: number): EnvironmentStatus {
@@ -88,7 +141,7 @@ export class CodexRuntime implements CodexRuntimeLike {
   private cached: { at: number; probe: RuntimeProbe } | null = null
   private readonly ownedProcessIds = new Set<number>()
 
-  constructor(private readonly settings: SettingsStore) {}
+  constructor(private readonly settings: Pick<SettingsStore, 'load'>) {}
 
   async probe(force = false): Promise<RuntimeProbe> {
     if (!force && this.cached && Date.now() - this.cached.at < PROBE_TTL_MS) {
@@ -96,53 +149,52 @@ export class CodexRuntime implements CodexRuntimeLike {
     }
 
     const configured = await this.settings.load()
-    const command = configured.customCliPath ?? process.env.CODEX_BINARY?.trim() ?? 'codex'
+    const requestedCommand = configured.customCliPath ?? process.env.CODEX_BINARY?.trim() ?? 'codex'
+    const candidates = resolveCodexCandidates(requestedCommand)
     const externalCodexProcesses = await this.countExternalProcesses()
+    let lastCommand = candidates[0] ?? requestedCommand
+    let lastError: unknown = null
+    let launchedCandidate = false
 
-    try {
-      const result = await capture(command, ['--version'])
-      const version = parseVersion(`${result.stdout}\n${result.stderr}`)
-      if (result.code !== 0 || !version) {
-        const probe: RuntimeProbe = {
-          command,
-          status: {
-            state: 'error',
-            cliPath: command,
-            cliVersion: version,
-            minimumVersion: MINIMUM_CODEX_VERSION,
-            message: 'Codex CLI was found but did not return a valid version.',
-            externalCodexProcesses,
-            capabilities: { pinning: false }
-          }
+    for (const command of candidates) {
+      lastCommand = command
+      try {
+        const result = await capture(command, ['--version'])
+        launchedCandidate = true
+        const version = parseCodexVersion(`${result.stdout}\n${result.stderr}`)
+        if (result.code === 0 && version) {
+          const probe = { command, status: readyStatus(command, version, externalCodexProcesses) }
+          this.cached = { at: Date.now(), probe }
+          return probe
         }
-        this.cached = { at: Date.now(), probe }
-        return probe
+        lastError = new Error(`Codex CLI version probe exited with code ${result.code ?? 'unknown'}.`)
+      } catch (error) {
+        lastError = error
       }
-
-      const probe = { command, status: readyStatus(command, version, externalCodexProcesses) }
-      this.cached = { at: Date.now(), probe }
-      return probe
-    } catch (error) {
-      const missing = (error as NodeJS.ErrnoException).code === 'ENOENT'
-      const probe: RuntimeProbe = {
-        command,
-        status: {
-          state: missing ? 'missing' : 'error',
-          cliPath: configured.customCliPath ?? process.env.CODEX_BINARY?.trim() ?? null,
-          cliVersion: null,
-          minimumVersion: MINIMUM_CODEX_VERSION,
-          message: missing
-            ? 'Codex CLI was not found. Install it or choose the executable in Settings.'
-            : error instanceof Error
-              ? error.message
-              : 'Unable to start Codex CLI.',
-          externalCodexProcesses,
-          capabilities: { pinning: false }
-        }
-      }
-      this.cached = { at: Date.now(), probe }
-      return probe
     }
+
+    const missing =
+      !launchedCandidate && (lastError as NodeJS.ErrnoException | null)?.code === 'ENOENT'
+    const probe: RuntimeProbe = {
+      command: lastCommand,
+      status: {
+        state: missing ? 'missing' : 'error',
+        cliPath: missing ? null : lastCommand,
+        cliVersion: null,
+        minimumVersion: MINIMUM_CODEX_VERSION,
+        message: missing
+          ? 'Codex CLI was not found. Install it or choose the executable in Settings.'
+          : launchedCandidate
+            ? 'Codex CLI candidates were found but none returned a valid version.'
+            : lastError instanceof Error
+              ? lastError.message
+              : 'Unable to start Codex CLI.',
+        externalCodexProcesses,
+        capabilities: { pinning: false }
+      }
+    }
+    this.cached = { at: Date.now(), probe }
+    return probe
   }
 
   invalidate(): void {
