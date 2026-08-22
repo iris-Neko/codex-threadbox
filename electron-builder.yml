@@ -1,0 +1,45 @@
+appId: io.github.iris-neko.codex-threadbox
+productName: Threadbox for Codex
+directories:
+  buildResources: resources
+  output: dist
+files:
+  - out/**
+  - package.json
+extraResources:
+  - from: resources/icon.png
+    to: icon.png
+asar: true
+asarUnpack:
+  - node_modules/cross-spawn/**
+win:
+  icon: resources/icon.png
+  target:
+    - nsis
+    - zip
+  artifactName: Threadbox-for-Codex-${version}-windows-${arch}.${ext}
+mac:
+  icon: resources/icon.png
+  category: public.app-category.developer-tools
+  target:
+    - dmg
+    - zip
+  artifactName: Threadbox-for-Codex-${version}-macos-${arch}.${ext}
+  identity: null
+linux:
+  icon: resources/icon.png
+  executableName: threadbox-for-codex
+  category: Utility
+  target:
+    - AppImage
+    - deb
+  artifactName: Threadbox-for-Codex-${version}-linux-${arch}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+publish:
+  provider: github
+  owner: iris-Neko
+  repo: codex-threadbox
+  releaseType: draft

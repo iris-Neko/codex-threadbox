@@ -1,0 +1,10 @@
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.png binary
+*.ico binary
+*.icns binary
+*.zip binary
+*.dmg binary
+*.exe binary
+*.AppImage binary
+*.deb binary

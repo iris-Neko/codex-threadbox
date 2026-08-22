@@ -1,0 +1,75 @@
+{
+  "name": "codex-threadbox",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A local, cross-platform thread manager for Codex.",
+  "license": "MIT",
+  "author": "iris-Neko",
+  "homepage": "https://github.com/iris-Neko/codex-threadbox",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/iris-Neko/codex-threadbox.git"
+  },
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "npm run typecheck && electron-vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "npm run build && playwright test",
+    "test:integration": "node scripts/smoke-real-cli.mjs",
+    "test:packaged": "node scripts/smoke-packaged.mjs",
+    "protocol:generate": "node scripts/generate-protocol.mjs",
+    "icons:generate": "node scripts/generate-icons.mjs",
+    "package": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder",
+    "verify": "npm run lint && npm run typecheck && npm test && npm run build"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "keywords": [
+    "codex",
+    "electron",
+    "thread-manager",
+    "conversation-history"
+  ],
+  "dependencies": {
+    "cross-spawn": "^7.0.6",
+    "i18next": "^26.4.0",
+    "lucide-react": "^1.33.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-i18next": "^17.0.12",
+    "semver": "^7.7.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@openai/codex": "0.149.0",
+    "@playwright/test": "^1.62.1",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/cross-spawn": "^6.0.6",
+    "@types/node": "^26.2.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@types/semver": "^7.8.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "@vitest/coverage-v8": "^4.1.11",
+    "electron": "^43.4.1",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "eslint": "^10.9.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.4",
+    "globals": "^17.11.0",
+    "jsdom": "^30.0.1",
+    "sharp": "^0.35.3",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.67.0",
+    "vite": "^7.3.6",
+    "vitest": "^4.1.11"
+  }
+}

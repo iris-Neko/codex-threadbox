@@ -1,0 +1,175 @@
+import { describe, expect, it } from 'vitest'
+import type { RpcClientLike } from '../../src/main/app-server-client'
+import { ThreadService } from '../../src/main/thread-service'
+import type { EnvironmentStatus } from '../../src/shared/contracts'
+import type { Thread } from '../../src/shared/protocol/generated/v2/Thread'
+
+const ready: EnvironmentStatus = {
+  state: 'ready',
+  cliPath: 'codex',
+  cliVersion: '0.150.0',
+  minimumVersion: '0.149.0',
+  message: null,
+  externalCodexProcesses: 0,
+  capabilities: { pinning: true }
+}
+
+function thread(id: string, overrides: Partial<Thread> = {}): Thread {
+  return {
+    id,
+    sessionId: id,
+    forkedFromId: null,
+    parentThreadId: null,
+    preview: `Preview ${id}`,
+    ephemeral: false,
+    section: null,
+    sectionEnteredAt: null,
+    projectId: null,
+    modelProvider: 'openai',
+    createdAt: 100,
+    updatedAt: 200,
+    recencyAt: 200,
+    status: { type: 'notLoaded' },
+    path: null,
+    cwd: '/workspace',
+    cliVersion: '0.150.0',
+    source: 'cli',
+    threadSource: null,
+    agentNickname: null,
+    agentRole: null,
+    gitInfo: null,
+    name: null,
+    turns: [],
+    ...overrides
+  }
+}
+
+class FakeClient implements RpcClientLike {
+  readonly calls: Array<{ method: string; params: Record<string, unknown> }> = []
+  failDeleteId: string | null = null
+
+  constructor(
+    private readonly active: Thread[],
+    private readonly archived: Thread[],
+    private readonly pinned: Set<string> = new Set(),
+    private readonly environment: EnvironmentStatus = ready
+  ) {}
+
+  async request<T>(method: string, rawParams: unknown = {}): Promise<T> {
+    const params = rawParams as Record<string, unknown>
+    this.calls.push({ method, params })
+    if (method === 'thread/list') {
+      const source = params.archived ? this.archived : this.active
+      const data = params.isPinned ? source.filter((item) => this.pinned.has(item.id)) : source
+      return { data, nextCursor: null, backwardsCursor: null } as T
+    }
+    if (method === 'thread/delete' && params.threadId === this.failDeleteId) {
+      throw new Error('delete failed')
+    }
+    return {} as T
+  }
+
+  async getProbe(): Promise<{ command: string; status: EnvironmentStatus }> {
+    return { command: 'codex', status: structuredClone(this.environment) }
+  }
+
+  async restart(): Promise<void> {}
+}
+
+describe('ThreadService', () => {
+  it('follows pagination cursors until all pages are loaded', async () => {
+    const pages = [thread('first'), thread('second')]
+    let activeCalls = 0
+    const client: RpcClientLike = {
+      getProbe: async () => ({
+        command: 'codex',
+        status: { ...ready, capabilities: { pinning: false } }
+      }),
+      restart: async () => undefined,
+      request: async <T,>(method: string, rawParams: unknown = {}) => {
+        const params = rawParams as Record<string, unknown>
+        if (method !== 'thread/list' || params.archived) {
+          return { data: [], nextCursor: null, backwardsCursor: null } as T
+        }
+        const index = params.cursor ? 1 : 0
+        activeCalls += 1
+        return {
+          data: [pages[index]],
+          nextCursor: index === 0 ? 'next-page' : null,
+          backwardsCursor: null
+        } as T
+      }
+    }
+
+    const result = await new ThreadService(client).listThreads()
+    expect(result.threads.map((item) => item.id).toSorted()).toEqual(['first', 'second'])
+    expect(activeCalls).toBe(2)
+  })
+
+  it('merges active and archived tasks and calculates descendants', async () => {
+    const parent = thread('parent', { name: 'Parent' })
+    const child = thread('child', {
+      parentThreadId: 'parent',
+      source: {
+        subAgent: {
+          thread_spawn: {
+            parent_thread_id: 'parent',
+            depth: 1,
+            agent_path: null,
+            agent_nickname: null,
+            agent_role: null
+          }
+        }
+      }
+    })
+    const archived = thread('archived')
+    const service = new ThreadService(new FakeClient([parent, child], [archived]))
+
+    const result = await service.listThreads()
+    expect(result.threads).toHaveLength(3)
+    expect(result.threads.find((item) => item.id === 'parent')).toMatchObject({
+      title: 'Parent',
+      descendantCount: 1,
+      archived: false
+    })
+    expect(result.threads.find((item) => item.id === 'child')?.internal).toBe(true)
+    expect(result.threads.find((item) => item.id === 'archived')?.archived).toBe(true)
+  })
+
+  it('deduplicates selected descendants and skips protected tasks', async () => {
+    const parent = thread('parent')
+    const child = thread('child', { parentThreadId: 'parent' })
+    const active = thread('active', { status: { type: 'active', activeFlags: [] } })
+    const pinned = thread('pinned')
+    const client = new FakeClient([parent, child, active, pinned], [], new Set(['pinned']))
+    const service = new ThreadService(client)
+
+    const result = await service.deleteThreads(['parent', 'child', 'active', 'pinned'])
+    expect(result.succeeded).toEqual(['parent'])
+    expect(result.cascadedCount).toBe(1)
+    expect(result.skipped.map((item) => item.id).toSorted()).toEqual(['active', 'pinned'])
+    expect(
+      client.calls.filter((call) => call.method === 'thread/delete').map((call) => call.params.threadId)
+    ).toEqual(['parent'])
+  })
+
+  it('continues a batch after an individual failure', async () => {
+    const client = new FakeClient([thread('one'), thread('two')], [])
+    client.failDeleteId = 'one'
+    const service = new ThreadService(client)
+
+    const result = await service.deleteThreads(['one', 'two'])
+    expect(result.failed).toEqual([{ id: 'one', message: 'delete failed' }])
+    expect(result.succeeded).toEqual(['two'])
+  })
+
+  it('reports pinning as unsupported without sending a mutation', async () => {
+    const environment = { ...ready, cliVersion: '0.149.0', capabilities: { pinning: false } }
+    const client = new FakeClient([thread('one')], [], new Set(), environment)
+    const service = new ThreadService(client)
+
+    const result = await service.setPinned(['one'], true)
+    expect(result.failed).toHaveLength(1)
+    expect(client.calls.some((call) => call.method === 'thread/metadata/update')).toBe(false)
+  })
+})
