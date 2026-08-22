@@ -4,7 +4,11 @@
   "private": true,
   "description": "A local, cross-platform thread manager for Codex.",
   "license": "MIT",
-  "author": "iris-Neko",
+  "author": {
+    "name": "iris-Neko",
+    "email": "69968631+iris-Neko@users.noreply.github.com"
+  },
+  "desktopName": "Threadbox for Codex",
   "homepage": "https://github.com/iris-Neko/codex-threadbox",
   "repository": {
     "type": "git",

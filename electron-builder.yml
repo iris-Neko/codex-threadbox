@@ -29,6 +29,7 @@ mac:
 linux:
   icon: resources/icon.png
   executableName: threadbox-for-codex
+  syncDesktopName: true
   category: Utility
   target:
     - AppImage
