@@ -1,10 +1,11 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { runTests, downloadAndUnzipVSCode } from '@vscode/test-electron'
 
 const packageRoot = resolve(import.meta.dirname, '..')
+const manifest = JSON.parse(await readFile(resolve(packageRoot, 'package.json'), 'utf8'))
 const workspace = await mkdtemp(join(tmpdir(), 'threadbox-vscode-workspace-'))
 const installation = await mkdtemp(join(tmpdir(), 'threadbox-vscode-installation-'))
 const extensionsDirectory = join(installation, 'extensions')
@@ -14,7 +15,7 @@ const fakeCli = resolve(
   '../../tests/fixtures/bin',
   process.platform === 'win32' ? 'codex.cmd' : 'codex'
 )
-const vsix = resolve(packageRoot, '../../dist/threadbox-for-codex-0.3.0.vsix')
+const vsix = resolve(packageRoot, `../../dist/threadbox-for-codex-${manifest.version}.vsix`)
 
 try {
   const vscodeExecutablePath = await downloadAndUnzipVSCode('stable')

@@ -75,7 +75,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "package": "npm run build && vsce package --no-dependencies --out ../../dist/threadbox-for-codex-0.3.0.vsix",
+    "package": "npm run build && node scripts/package-vsix.mjs",
     "test:extension": "npm run package && node scripts/test-extension.mjs"
   },
   "devDependencies": {
