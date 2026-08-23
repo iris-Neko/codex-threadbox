@@ -9,8 +9,8 @@ The workflow builds and tests everything before creating a draft GitHub Release.
 The account owner must complete actions that cannot be delegated safely:
 
 1. Sign in to npm, accept current terms and 2FA requirements, and authorize a granular automation token that can publish the new unscoped `codex-threadbox` package.
-2. Create or confirm the VS Code Marketplace publisher `iris-neko`, accept publisher agreements, and authorize a Marketplace `Manage` token.
-3. Sign in to Open VSX, create or claim the `iris-neko` namespace, accept its publisher agreement, and authorize a publishing token.
+2. Create or confirm the VS Code Marketplace publisher `irisNeko`, accept publisher agreements, and authorize a Marketplace `Manage` token.
+3. Sign in to Open VSX, create or claim the `irisNeko` namespace, accept its publisher agreement, and authorize a publishing token.
 
 After the user completes those checkpoints, the release operator writes the resulting values to repository Actions secrets named `NPM_TOKEN`, `VSCE_PAT`, and `OVSX_PAT`. Do not put tokens in files, issues, logs, commits, or command arguments.
 

@@ -91,7 +91,7 @@ threadbox
 
 ## VS Code 插件安装
 
-可从 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=iris-neko.threadbox-for-codex)、[Open VSX](https://open-vsx.org/extension/iris-neko/threadbox-for-codex) 或 Release 中的 VSIX 安装 **Threadbox for Codex**，然后在命令面板执行 **Threadbox: Open Manager**。
+可从 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=irisNeko.threadbox-for-codex)、[Open VSX](https://open-vsx.org/extension/irisNeko/threadbox-for-codex) 或 Release 中的 VSIX 安装 **Threadbox for Codex**，然后在命令面板执行 **Threadbox: Open Manager**。
 
 插件声明了 `extensionKind: ["workspace"]`。在 Remote SSH、Dev Container 和 Codespaces 中，Codex CLI、`CODEX_HOME`、任务数据和 App Server 进程都位于远端。需要时使用 machine-scoped 的 `threadbox.codexBinary`、`threadbox.codexHome` 和 `threadbox.language` 设置。未信任工作区不会启动 Codex 或执行任务修改。
 

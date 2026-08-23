@@ -132,7 +132,7 @@ jobs:
       - name: Verify manually published VS Code Marketplace extension
         if: env.VSCE_PAT == ''
         run: |
-          npx --yes @vscode/vsce@3.6.2 show iris-neko.threadbox-for-codex --json > marketplace-extension.json
+          npx --yes @vscode/vsce@3.6.2 show irisNeko.threadbox-for-codex --json > marketplace-extension.json
           node -e "const extension = require('./marketplace-extension.json'); const version = process.argv[1]; if (!extension.versions?.some((entry) => entry.version === version)) { throw new Error('VS Code Marketplace version ' + version + ' is not published') }" "${GITHUB_REF_NAME#v}"
       - name: Publish Open VSX extension
         run: npx --yes ovsx@0.10.7 publish release-artifacts/threadbox-for-codex-0.3.0.vsix --pat "$OVSX_PAT"

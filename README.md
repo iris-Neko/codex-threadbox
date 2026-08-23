@@ -91,7 +91,7 @@ Running `threadbox` in a TTY opens the interactive manager. Scriptable commands 
 
 ## VS Code install
 
-Install **Threadbox for Codex** from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=iris-neko.threadbox-for-codex), [Open VSX](https://open-vsx.org/extension/iris-neko/threadbox-for-codex), or the release VSIX. Run **Threadbox: Open Manager** from the Command Palette.
+Install **Threadbox for Codex** from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=irisNeko.threadbox-for-codex), [Open VSX](https://open-vsx.org/extension/irisNeko/threadbox-for-codex), or the release VSIX. Run **Threadbox: Open Manager** from the Command Palette.
 
 The extension declares `extensionKind: ["workspace"]`. In Remote SSH, Dev Containers, and Codespaces, Codex CLI, `CODEX_HOME`, task data, and the App Server process all remain on the remote host. Configure `threadbox.codexBinary`, `threadbox.codexHome`, or `threadbox.language` as machine-scoped settings when needed. An untrusted workspace cannot start Codex or modify task metadata.
 
