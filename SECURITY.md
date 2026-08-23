@@ -16,4 +16,6 @@ Include the affected version, operating system, reproduction steps, and impact. 
 - IPC inputs are validated and constrained to known task IDs and working directories.
 - Codex commands are spawned with argument arrays rather than user-built shell strings.
 - Task mutations use official App Server methods.
+- Desktop Recents repair is restricted to fixed statements against orphaned local-host rows in the derived catalog, after an online backup and integrity check.
+- Optional project cleanup uses the operating system Trash after task deletion succeeds, with shared and protected path checks in the main process.
 - Threadbox has no telemetry and does not store conversation content.

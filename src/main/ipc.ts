@@ -1,6 +1,10 @@
 import { clipboard, dialog, ipcMain, shell } from 'electron'
 import { isAbsolute } from 'node:path'
-import { IPC_CHANNELS, type AppLocale } from '../shared/contracts'
+import {
+  IPC_CHANNELS,
+  type AppLocale,
+  type DeleteThreadsOptions
+} from '../shared/contracts'
 import type { AppServerClient } from './app-server-client'
 import type { CodexRuntime } from './codex-runtime'
 import type { SettingsStore } from './settings-store'
@@ -15,6 +19,20 @@ function validIds(value: unknown): string[] {
   return [...new Set(ids)]
 }
 
+function validDeleteOptions(value: unknown): DeleteThreadsOptions {
+  if (!value || typeof value !== 'object') throw new Error('Invalid deletion options.')
+  const directories = (value as { trashWorkingDirectories?: unknown }).trashWorkingDirectories
+  if (!Array.isArray(directories) || directories.length > 500) {
+    throw new Error('Invalid working directory selection.')
+  }
+  const paths = directories.filter(
+    (path): path is string =>
+      typeof path === 'string' && path.length > 0 && path.length <= 4096 && isAbsolute(path)
+  )
+  if (paths.length !== directories.length) throw new Error('Invalid working directory selection.')
+  return { trashWorkingDirectories: [...new Set(paths)] }
+}
+
 export function registerIpcHandlers(
   service: ThreadService,
   settings: SettingsStore,
@@ -23,9 +41,10 @@ export function registerIpcHandlers(
 ): void {
   ipcMain.handle(IPC_CHANNELS.environment, async () => (await runtime.probe(true)).status)
   ipcMain.handle(IPC_CHANNELS.listThreads, () => service.listThreads())
-  ipcMain.handle(IPC_CHANNELS.deleteThreads, (_event, ids: unknown) =>
-    service.deleteThreads(validIds(ids))
+  ipcMain.handle(IPC_CHANNELS.deleteThreads, (_event, ids: unknown, options: unknown) =>
+    service.deleteThreads(validIds(ids), validDeleteOptions(options))
   )
+  ipcMain.handle(IPC_CHANNELS.repairDesktopRecents, () => service.repairDesktopRecents())
   ipcMain.handle(IPC_CHANNELS.archiveThreads, (_event, ids: unknown) =>
     service.archiveThreads(validIds(ids))
   )

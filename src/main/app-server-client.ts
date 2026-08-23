@@ -1,4 +1,5 @@
 import { createInterface, type Interface } from 'node:readline'
+import packageJson from '../../package.json'
 import type { ChildProcess } from 'node:child_process'
 import type { CodexRuntimeLike, RuntimeProbe } from './codex-runtime'
 
@@ -98,7 +99,7 @@ export class AppServerClient implements RpcClientLike {
       clientInfo: {
         name: 'codex_threadbox',
         title: 'Threadbox for Codex',
-        version: '0.1.1'
+        version: packageJson.version
       }
     })
     this.sendNotification('initialized', {})

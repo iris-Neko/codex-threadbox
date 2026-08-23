@@ -12,6 +12,11 @@ if (!process.argv.includes('app-server')) {
 
 const now = Math.floor(Date.now() / 1000)
 const demoDirectory = process.platform === 'win32' ? 'C:\\dev\\threadbox' : '/home/demo/threadbox'
+const projectDirectory = process.platform === 'win32' ? 'C:\\dev\\design-system' : '/home/demo/design-system'
+const standaloneDirectory =
+  process.platform === 'win32'
+    ? 'C:\\Users\\demo\\Documents\\Codex\\2026-08-23\\cleanup'
+    : '/home/demo/Documents/Codex/2026-08-23/cleanup'
 const active = [
   {
     id: '019f0000-0000-7000-8000-000000000001',
@@ -31,7 +36,7 @@ const active = [
     path: null,
     cwd: demoDirectory,
     cliVersion: '0.149.0',
-    source: 'cli',
+    source: 'vscode',
     threadSource: null,
     agentNickname: null,
     agentRole: null,
@@ -64,6 +69,32 @@ const active = [
     gitInfo: null,
     name: null,
     turns: []
+  },
+  {
+    id: '019f0000-0000-7000-8000-000000000004',
+    sessionId: 'session-3',
+    forkedFromId: null,
+    parentThreadId: null,
+    preview: 'Review reusable component APIs',
+    ephemeral: false,
+    section: null,
+    sectionEnteredAt: null,
+    projectId: 'project-design-system',
+    modelProvider: 'openai',
+    createdAt: now - 7200,
+    updatedAt: now - 240,
+    recencyAt: now - 240,
+    status: { type: 'notLoaded' },
+    path: null,
+    cwd: projectDirectory,
+    cliVersion: '0.149.0',
+    source: 'appServer',
+    threadSource: null,
+    agentNickname: null,
+    agentRole: null,
+    gitInfo: null,
+    name: 'Project design review',
+    turns: []
   }
 ]
 const archived = [
@@ -74,6 +105,9 @@ const archived = [
     preview: 'Clean up old project tasks',
     name: 'Archived cleanup',
     parentThreadId: null,
+    projectId: null,
+    cwd: standaloneDirectory,
+    source: 'appServer',
     createdAt: now - 86_400,
     updatedAt: now - 43_200
   }

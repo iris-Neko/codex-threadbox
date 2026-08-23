@@ -1,7 +1,9 @@
-import { app, BrowserWindow, Menu } from 'electron'
+import { app, BrowserWindow, Menu, shell } from 'electron'
 import { join } from 'node:path'
 import { AppServerClient } from './app-server-client'
 import { CodexRuntime } from './codex-runtime'
+import { WorkingDirectoryCleaner } from './directory-cleaner'
+import { DesktopRecentsRepair } from './desktop-recents-repair'
 import { registerIpcHandlers } from './ipc'
 import { SettingsStore } from './settings-store'
 import { ThreadService } from './thread-service'
@@ -44,7 +46,30 @@ app.whenReady().then(() => {
   const settings = new SettingsStore()
   const runtime = new CodexRuntime(settings)
   appServerClient = new AppServerClient(runtime)
-  const threadService = new ThreadService(appServerClient)
+  const codexHome = process.env.CODEX_HOME ?? join(app.getPath('home'), '.codex')
+  const platformProtectedPaths =
+    process.platform === 'win32'
+      ? [process.env.SystemRoot, process.env.ProgramFiles, process.env['ProgramFiles(x86)']]
+      : process.platform === 'darwin'
+        ? ['/Applications', '/Library', '/System']
+        : ['/boot', '/dev', '/etc', '/proc', '/sys', '/usr', '/var']
+  const directoryCleaner = new WorkingDirectoryCleaner(
+    (path) => shell.trashItem(path),
+    [
+      app.getAppPath(),
+      app.getPath('userData'),
+      codexHome,
+      process.execPath,
+      process.cwd(),
+      ...platformProtectedPaths.filter((path): path is string => Boolean(path))
+    ]
+  )
+  const desktopRecentsRepair = new DesktopRecentsRepair(
+    join(codexHome, 'sqlite', 'codex-dev.db'),
+    join(codexHome, 'backups_threadbox', 'desktop-recents'),
+    join(codexHome, 'state_5.sqlite')
+  )
+  const threadService = new ThreadService(appServerClient, directoryCleaner, desktopRecentsRepair)
   registerIpcHandlers(threadService, settings, runtime, appServerClient)
 
   Menu.setApplicationMenu(null)

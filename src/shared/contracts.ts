@@ -9,6 +9,7 @@ export interface ThreadRecord {
   title: string
   preview: string
   cwd: string
+  projectId: string | null
   createdAt: number
   updatedAt: number
   source: string
@@ -36,7 +37,32 @@ export interface EnvironmentStatus {
 export interface ListThreadsResult {
   threads: ThreadRecord[]
   environment: EnvironmentStatus
+  desktopRecents: DesktopRecentsStatus
   refreshedAt: number
+}
+
+export interface DesktopRecentsEntry {
+  id: string
+  title: string
+}
+
+export interface DesktopRecentsStatus {
+  state: 'clean' | 'stale' | 'unavailable' | 'error'
+  staleCount: number
+  staleEntries: DesktopRecentsEntry[]
+  message: string | null
+}
+
+export interface DesktopRecentsCleanupResult {
+  removed: number
+  backupPath: string | null
+  error: string | null
+}
+
+export interface DesktopRecentsRepairResult {
+  removed: number
+  backupPath: string | null
+  status: DesktopRecentsStatus
 }
 
 export interface OperationFailure {
@@ -50,6 +76,24 @@ export interface BatchOperationResult {
   skipped: OperationFailure[]
   cascadedCount: number
   refreshedAt: number
+  directoryCleanup?: WorkingDirectoryCleanupResult
+  desktopRecentsCleanup?: DesktopRecentsCleanupResult
+}
+
+export interface WorkingDirectoryIssue {
+  path: string
+  message: string
+}
+
+export interface WorkingDirectoryCleanupResult {
+  requested: string[]
+  trashed: string[]
+  failed: WorkingDirectoryIssue[]
+  skipped: WorkingDirectoryIssue[]
+}
+
+export interface DeleteThreadsOptions {
+  trashWorkingDirectories: string[]
 }
 
 export interface AppSettings {
@@ -60,7 +104,8 @@ export interface AppSettings {
 export interface ThreadboxApi {
   getEnvironmentStatus(): Promise<EnvironmentStatus>
   listThreads(): Promise<ListThreadsResult>
-  deleteThreads(ids: string[]): Promise<BatchOperationResult>
+  deleteThreads(ids: string[], options: DeleteThreadsOptions): Promise<BatchOperationResult>
+  repairDesktopRecents(): Promise<DesktopRecentsRepairResult>
   archiveThreads(ids: string[]): Promise<BatchOperationResult>
   unarchiveThreads(ids: string[]): Promise<BatchOperationResult>
   setPinned(ids: string[], pinned: boolean): Promise<BatchOperationResult>
@@ -75,6 +120,7 @@ export const IPC_CHANNELS = {
   environment: 'threadbox:environment',
   listThreads: 'threadbox:list-threads',
   deleteThreads: 'threadbox:delete-threads',
+  repairDesktopRecents: 'threadbox:repair-desktop-recents',
   archiveThreads: 'threadbox:archive-threads',
   unarchiveThreads: 'threadbox:unarchive-threads',
   setPinned: 'threadbox:set-pinned',

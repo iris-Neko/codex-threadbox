@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented here.
 
+## 0.2.0 - 2026-08-23
+
+### Added
+
+- Choose working directories individually when permanently deleting tasks.
+- Move selected directories to the operating system Trash only after task deletion succeeds.
+- Keep shared, root, home, Codex data, system, application-containing, symbolic-link, and missing paths.
+- Report directory cleanup results separately from task deletion results.
+- Display spawned tasks as expandable nested rows under their parent tasks.
+- Group desktop Project tasks by `projectId`, VS Code/CLI tasks by working directory, and projectless desktop tasks separately.
+- Switch between grouped and flat views and filter directly by project or workspace.
+- Detect orphaned entries in Codex desktop's derived Recents catalog.
+- Back up, verify, and repair stale local Recents index rows after explicit confirmation.
+- Remove matching Recents index rows automatically after a successful App Server deletion.
+
+### Fixed
+
+- Selecting a parent task now automatically includes and locks all descendants, while submitting only the highest selected task for cascading operations.
+- Replace the incorrect restart guidance with direct detection and repair of persisted Recents catalog rows.
+
 ## 0.1.1 - 2026-08-23
 
 ### Fixed

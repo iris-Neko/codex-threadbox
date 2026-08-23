@@ -1,8 +1,21 @@
-import type { BatchOperationResult, ListThreadsResult, ThreadRecord } from '../shared/contracts'
+import type {
+  BatchOperationResult,
+  DeleteThreadsOptions,
+  DesktopRecentsRepairResult,
+  ListThreadsResult,
+  ThreadRecord,
+  WorkingDirectoryCleanupResult
+} from '../shared/contracts'
 import type { Thread } from '../shared/protocol/generated/v2/Thread'
 import type { ThreadListResponse } from '../shared/protocol/generated/v2/ThreadListResponse'
 import type { ThreadSourceKind } from '../shared/protocol/generated/v2/ThreadSourceKind'
 import type { RpcClientLike } from './app-server-client'
+import type { DesktopRecentsRepairLike } from './desktop-recents-repair'
+import {
+  containsPath,
+  samePath,
+  type WorkingDirectoryCleanerLike
+} from './directory-cleaner'
 
 const SOURCE_KINDS: ThreadSourceKind[] = [
   'cli',
@@ -67,7 +80,11 @@ export class ThreadService {
   private lastKnownDirectories = new Set<string>()
   private lastKnownThreadIds = new Set<string>()
 
-  constructor(private readonly client: RpcClientLike) {}
+  constructor(
+    private readonly client: RpcClientLike,
+    private readonly directoryCleaner?: WorkingDirectoryCleanerLike,
+    private readonly desktopRecentsRepair?: DesktopRecentsRepairLike
+  ) {}
 
   async listThreads(): Promise<ListThreadsResult> {
     const { entries, pinnedIds, environment } = await this.inventory()
@@ -80,6 +97,7 @@ export class ThreadService {
         title: displayTitle(thread),
         preview: thread.preview,
         cwd: String(thread.cwd),
+        projectId: thread.projectId,
         createdAt: thread.createdAt,
         updatedAt: thread.updatedAt,
         source: sourceLabel(thread.source),
@@ -96,10 +114,35 @@ export class ThreadService {
     records.sort((left, right) => right.updatedAt - left.updatedAt)
     this.lastKnownDirectories = new Set(records.map((record) => record.cwd))
     this.lastKnownThreadIds = new Set(records.map((record) => record.id))
-    return { threads: records, environment, refreshedAt: Date.now() }
+    const desktopRecents = this.desktopRecentsRepair
+      ? await this.desktopRecentsRepair.inspect(new Set(records.map((record) => record.id)))
+      : { state: 'unavailable' as const, staleCount: 0, staleEntries: [], message: null }
+    return { threads: records, environment, desktopRecents, refreshedAt: Date.now() }
   }
 
-  async deleteThreads(ids: string[]): Promise<BatchOperationResult> {
+  async repairDesktopRecents(): Promise<DesktopRecentsRepairResult> {
+    if (!this.desktopRecentsRepair) {
+      return {
+        removed: 0,
+        backupPath: null,
+        status: {
+          state: 'unavailable',
+          staleCount: 0,
+          staleEntries: [],
+          message: 'The Codex desktop Recents catalog is not available.'
+        }
+      }
+    }
+    const { entries } = await this.inventory()
+    return this.desktopRecentsRepair.repair(
+      new Set(entries.map((entry) => entry.thread.id))
+    )
+  }
+
+  async deleteThreads(
+    ids: string[],
+    options: DeleteThreadsOptions = { trashWorkingDirectories: [] }
+  ): Promise<BatchOperationResult> {
     const requested = new Set(ids)
     const { entries, pinnedIds } = await this.inventory()
     const byId = new Map(entries.map((entry) => [entry.thread.id, entry]))
@@ -121,18 +164,39 @@ export class ThreadService {
       [...requested].filter((id) => byId.has(id) && !skipped.some((item) => item.id === id))
     )
     const roots = [...eligible].filter((id) => !this.hasSelectedAncestor(id, eligible, byId))
-    const cascaded = new Set<string>()
-    for (const root of roots) {
-      for (const descendant of this.descendantsOf(root, children)) cascaded.add(descendant)
-    }
-    for (const root of roots) cascaded.delete(root)
-
     const result = await this.runBatch('thread/delete', roots)
+    const deletedIds = new Set<string>()
+    const cascaded = new Set<string>()
+    for (const root of result.succeeded) {
+      deletedIds.add(root)
+      for (const descendant of this.descendantsOf(root, children)) {
+        deletedIds.add(descendant)
+        if (descendant !== root) cascaded.add(descendant)
+      }
+    }
+
+    const directoryCleanup =
+      options.trashWorkingDirectories.length > 0
+        ? await this.cleanupWorkingDirectories(
+            options.trashWorkingDirectories,
+            eligible,
+            deletedIds,
+            entries
+          )
+        : undefined
+
+    const desktopRecentsCleanup =
+      this.desktopRecentsRepair && deletedIds.size > 0
+        ? await this.desktopRecentsRepair.removeThreadIds(deletedIds)
+        : undefined
+
     return {
       ...result,
       skipped,
       cascadedCount: cascaded.size,
-      refreshedAt: Date.now()
+      refreshedAt: Date.now(),
+      directoryCleanup,
+      desktopRecentsCleanup
     }
   }
 
@@ -268,6 +332,72 @@ export class ThreadService {
       }
     }
     return { succeeded, failed, skipped: [], cascadedCount: 0, refreshedAt: Date.now() }
+  }
+
+  private async cleanupWorkingDirectories(
+    requestedPaths: string[],
+    selectedIds: Set<string>,
+    deletedIds: Set<string>,
+    entries: InventoryEntry[]
+  ): Promise<WorkingDirectoryCleanupResult> {
+    const requested = requestedPaths.filter(
+      (path, index, paths) => paths.findIndex((candidate) => samePath(candidate, path)) === index
+    )
+    const selectedEntries = entries.filter((entry) => selectedIds.has(entry.thread.id))
+    const candidates: string[] = []
+    const skipped: WorkingDirectoryCleanupResult['skipped'] = []
+
+    for (const path of requested) {
+      const selectedEntry = selectedEntries.find((entry) => samePath(String(entry.thread.cwd), path))
+      if (!selectedEntry) {
+        skipped.push({
+          path,
+          message: 'The directory does not belong to a selected deletable task.'
+        })
+        continue
+      }
+
+      const deletedOwner = selectedEntries.some(
+        (entry) =>
+          deletedIds.has(entry.thread.id) && samePath(String(entry.thread.cwd), selectedEntry.thread.cwd)
+      )
+      if (!deletedOwner) {
+        skipped.push({ path, message: 'The task deletion did not succeed, so its directory was kept.' })
+        continue
+      }
+
+      const remainingReference = entries.some(
+        (entry) =>
+          !deletedIds.has(entry.thread.id) && containsPath(path, String(entry.thread.cwd))
+      )
+      if (remainingReference) {
+        skipped.push({ path, message: 'Another remaining Codex task uses this directory.' })
+        continue
+      }
+      candidates.push(String(selectedEntry.thread.cwd))
+    }
+
+    if (!this.directoryCleaner) {
+      skipped.push(
+        ...candidates.map((path) => ({
+          path,
+          message: 'Moving working directories to Trash is unavailable.'
+        }))
+      )
+      return { requested, trashed: [], failed: [], skipped }
+    }
+
+    if (candidates.length === 0) {
+      return { requested, trashed: [], failed: [], skipped }
+    }
+
+    const cleaned = await this.directoryCleaner.cleanup(candidates)
+    return {
+      requested,
+      trashed: cleaned.trashed,
+      failed: cleaned.failed,
+      skipped: [...skipped, ...cleaned.skipped]
+    }
   }
 
   private buildChildren(entries: InventoryEntry[]): Map<string, string[]> {

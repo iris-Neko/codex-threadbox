@@ -2,7 +2,10 @@ import {
   AlertTriangle,
   Archive,
   ArchiveRestore,
+  DatabaseZap,
   Inbox,
+  Layers3,
+  List,
   LoaderCircle,
   Pin,
   PinOff,
@@ -12,24 +15,35 @@ import {
   Trash2,
   X
 } from 'lucide-react'
+import packageJson from '../../../package.json'
 import type { TFunction } from 'i18next'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type {
   AppSettings,
   BatchOperationResult,
+  DesktopRecentsStatus,
   EnvironmentStatus,
   ThreadRecord
 } from '../../shared/contracts'
 import { DeleteDialog } from './components/DeleteDialog'
+import { RecentsRepairDialog } from './components/RecentsRepairDialog'
 import { SettingsDialog } from './components/SettingsDialog'
 import { ThreadTable } from './components/ThreadTable'
 import {
   DEFAULT_FILTERS,
+  deselectThreadSubtrees,
   filterThreads,
+  flattenThreadTree,
+  groupThreadRows,
+  groupThreads,
+  resolveThreadSelection,
+  selectThreadRoots,
+  toggleThreadSelection,
   type AgeFilter,
   type ArchiveFilter,
   type SortMode,
+  type ThreadViewMode,
   type ThreadFilters
 } from './thread-utils'
 
@@ -47,11 +61,24 @@ function operationSummary(
   result: BatchOperationResult,
   translate: TFunction
 ): string {
-  return translate('operationDone', {
+  const taskSummary = translate('operationDone', {
     success: result.succeeded.length,
     failed: result.failed.length,
     skipped: result.skipped.length
   })
+  const details: string[] = [taskSummary]
+  if (result.directoryCleanup && result.directoryCleanup.requested.length > 0) {
+    details.push(translate('directoryCleanupDone', {
+      trashed: result.directoryCleanup.trashed.length,
+      kept: result.directoryCleanup.failed.length + result.directoryCleanup.skipped.length
+    }))
+  }
+  if (result.desktopRecentsCleanup?.error) {
+    details.push(translate('recentsCleanupFailed'))
+  } else if ((result.desktopRecentsCleanup?.removed ?? 0) > 0) {
+    details.push(translate('recentsCleanupDone', { count: result.desktopRecentsCleanup?.removed }))
+  }
+  return details.join(' ')
 }
 
 export default function App(): React.JSX.Element {
@@ -60,7 +87,17 @@ export default function App(): React.JSX.Element {
   const [settings, setSettings] = useState<AppSettings>({ locale: 'en', customCliPath: null })
   const [environment, setEnvironment] = useState<EnvironmentStatus>(INITIAL_ENVIRONMENT)
   const [threads, setThreads] = useState<ThreadRecord[]>([])
+  const [desktopRecents, setDesktopRecents] = useState<DesktopRecentsStatus>({
+    state: 'unavailable',
+    staleCount: 0,
+    staleEntries: [],
+    message: null
+  })
   const [filters, setFilters] = useState<ThreadFilters>(DEFAULT_FILTERS)
+  const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set())
+  const [collapsedThreads, setCollapsedThreads] = useState<Set<string>>(new Set())
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+  const [viewMode, setViewMode] = useState<ThreadViewMode>('grouped')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -68,6 +105,7 @@ export default function App(): React.JSX.Element {
   const [notice, setNotice] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [deleteIds, setDeleteIds] = useState<string[] | null>(null)
+  const [recentsRepairOpen, setRecentsRepairOpen] = useState(false)
 
   const refresh = useCallback(async (): Promise<void> => {
     setLoading(true)
@@ -76,10 +114,17 @@ export default function App(): React.JSX.Element {
       const result = await window.threadbox.listThreads()
       setThreads(result.threads)
       setEnvironment(result.environment)
+      setDesktopRecents(result.desktopRecents)
       const selectable = new Set(
         result.threads.filter((thread) => thread.status !== 'active').map((thread) => thread.id)
       )
-      setSelected((current) => new Set([...current].filter((id) => selectable.has(id))))
+      setSelected(
+        (current) =>
+          resolveThreadSelection(
+            result.threads,
+            [...current].filter((id) => selectable.has(id))
+          ).roots
+      )
     } catch (caught) {
       const status = await window.threadbox.getEnvironmentStatus().catch(() => INITIAL_ENVIRONMENT)
       setEnvironment(status)
@@ -106,18 +151,46 @@ export default function App(): React.JSX.Element {
     return () => window.clearTimeout(timer)
   }, [notice])
 
-  const visibleThreads = useMemo(() => filterThreads(threads, filters), [threads, filters])
-  const selectedThreads = useMemo(
-    () => threads.filter((thread) => selected.has(thread.id)),
+  const matchedThreads = useMemo(() => filterThreads(threads, filters), [threads, filters])
+  const treeRows = useMemo(
+    () =>
+      flattenThreadTree(
+        threads,
+        matchedThreads,
+        expandedThreads,
+        filters.query.trim().length > 0,
+        collapsedThreads
+      ),
+    [collapsedThreads, expandedThreads, filters.query, matchedThreads, threads]
+  )
+  const visibleThreads = useMemo(() => treeRows.map((row) => row.thread), [treeRows])
+  const workspaceGroups = useMemo(() => groupThreads(threads), [threads])
+  const rowGroups = useMemo(() => groupThreadRows(threads, treeRows), [threads, treeRows])
+  const selection = useMemo(
+    () => resolveThreadSelection(threads, selected),
     [selected, threads]
   )
+  const selectedRootThreads = useMemo(
+    () => threads.filter((thread) => selection.roots.has(thread.id)),
+    [selection.roots, threads]
+  )
+  const selectedThreads = useMemo(
+    () => threads.filter((thread) => selection.effective.has(thread.id)),
+    [selection.effective, threads]
+  )
   const selectableVisible = useMemo(
-    () => visibleThreads.filter((thread) => thread.status !== 'active'),
-    [visibleThreads]
+    () =>
+      treeRows
+        .filter((row) => row.matchesFilter && row.thread.status !== 'active')
+        .map((row) => row.thread),
+    [treeRows]
   )
   const allSelectableSelected =
-    selectableVisible.length > 0 && selectableVisible.every((thread) => selected.has(thread.id))
-  const someSelectableSelected = selectableVisible.some((thread) => selected.has(thread.id))
+    selectableVisible.length > 0 &&
+    selectableVisible.every((thread) => selection.effective.has(thread.id))
+  const someSelectableSelected = selectableVisible.some((thread) =>
+    selection.effective.has(thread.id)
+  )
   const sources = useMemo(
     () => [...new Set(threads.map((thread) => thread.source))].toSorted(),
     [threads]
@@ -141,7 +214,8 @@ export default function App(): React.JSX.Element {
       setError(null)
       try {
         const result = await operation()
-        setNotice(operationSummary(result, t))
+        const summary = operationSummary(result, t)
+        setNotice(summary)
         setSelected(new Set())
         if (closeDelete) setDeleteIds(null)
         await refresh()
@@ -154,20 +228,55 @@ export default function App(): React.JSX.Element {
     [refresh, t]
   )
 
+  const repairDesktopRecents = async (): Promise<void> => {
+    setBusy(true)
+    setError(null)
+    try {
+      const result = await window.threadbox.repairDesktopRecents()
+      setDesktopRecents(result.status)
+      setRecentsRepairOpen(false)
+      setNotice(t('recentsRepairDone', { count: result.removed }))
+      await refresh()
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t('operationFailed'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const toggleThread = (id: string): void => {
-    setSelected((current) => {
+    setSelected((current) => toggleThreadSelection(threads, current, id))
+  }
+
+  const toggleVisible = (): void => {
+    const visibleIds = selectableVisible.map((thread) => thread.id)
+    setSelected((current) =>
+      allSelectableSelected
+        ? deselectThreadSubtrees(threads, current, visibleIds)
+        : selectThreadRoots(threads, current, visibleIds)
+    )
+  }
+
+  const toggleExpanded = (id: string, currentlyExpanded: boolean): void => {
+    setExpandedThreads((current) => {
       const next = new Set(current)
-      if (next.has(id)) next.delete(id)
+      if (currentlyExpanded) next.delete(id)
       else next.add(id)
+      return next
+    })
+    setCollapsedThreads((current) => {
+      const next = new Set(current)
+      if (currentlyExpanded) next.add(id)
+      else next.delete(id)
       return next
     })
   }
 
-  const toggleVisible = (): void => {
-    setSelected((current) => {
+  const toggleGroup = (id: string): void => {
+    setCollapsedGroups((current) => {
       const next = new Set(current)
-      if (allSelectableSelected) selectableVisible.forEach((thread) => next.delete(thread.id))
-      else selectableVisible.forEach((thread) => next.add(thread.id))
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
       return next
     })
   }
@@ -187,8 +296,12 @@ export default function App(): React.JSX.Element {
     }
   }
 
-  const archiveSelected = selectedThreads.filter((thread) => !thread.archived).map((thread) => thread.id)
-  const unarchiveSelected = selectedThreads.filter((thread) => thread.archived).map((thread) => thread.id)
+  const archiveSelected = selectedRootThreads
+    .filter((thread) => !thread.archived)
+    .map((thread) => thread.id)
+  const unarchiveSelected = selectedRootThreads
+    .filter((thread) => thread.archived)
+    .map((thread) => thread.id)
   const pinnedSelected = selectedThreads.filter((thread) => thread.pinned).map((thread) => thread.id)
   const unpinnedSelected = selectedThreads.filter((thread) => !thread.pinned).map((thread) => thread.id)
   const ready = environment.state === 'ready'
@@ -202,13 +315,18 @@ export default function App(): React.JSX.Element {
           </span>
           <div>
             <h1>{t('appName')}</h1>
-            <span className="brand__version">v0.1.1</span>
+            <span className="brand__version">v{packageJson.version}</span>
           </div>
         </div>
         <div className="header-stats" aria-live="polite">
-          <span>
-            {visibleThreads.length} / {threads.filter((thread) => !thread.internal).length}
-          </span>
+          <span>{t('taskCount', { count: matchedThreads.filter((thread) => !thread.internal).length })}</span>
+          {matchedThreads.some((thread) => thread.internal) && (
+            <span>
+              {t('spawnedTaskCount', {
+                count: matchedThreads.filter((thread) => thread.internal).length
+              })}
+            </span>
+          )}
           <span>{environment.cliVersion ? `Codex ${environment.cliVersion}` : 'Codex -'}</span>
         </div>
         <div className="header-actions">
@@ -255,6 +373,26 @@ export default function App(): React.JSX.Element {
                 </button>
               )}
             </label>
+            <div className="segmented-control view-control" role="group" aria-label={t('viewMode')}>
+              <button
+                type="button"
+                className={viewMode === 'grouped' ? 'is-active' : undefined}
+                title={t('groupedView')}
+                onClick={() => setViewMode('grouped')}
+              >
+                <Layers3 size={15} aria-hidden="true" />
+                {t('grouped')}
+              </button>
+              <button
+                type="button"
+                className={viewMode === 'flat' ? 'is-active' : undefined}
+                title={t('flatView')}
+                onClick={() => setViewMode('flat')}
+              >
+                <List size={15} aria-hidden="true" />
+                {t('flat')}
+              </button>
+            </div>
             <div className="segmented-control" role="group">
               {(['all', 'active', 'archived'] as ArchiveFilter[]).map((value) => (
                 <button
@@ -271,6 +409,23 @@ export default function App(): React.JSX.Element {
                 </button>
               ))}
             </div>
+            <select
+              className="workspace-filter"
+              value={filters.workspace}
+              title={t('allWorkspaces')}
+              onChange={(event) => setFilter('workspace', event.target.value)}
+            >
+              <option value="all">{t('allWorkspaces')}</option>
+              {workspaceGroups.map((group) => (
+                <option key={group.id} value={group.id}>
+                  {group.kind === 'standalone'
+                    ? t('standaloneTasks')
+                    : group.kind === 'desktopProject'
+                      ? t('desktopProjectOption', { name: group.name })
+                      : t('localWorkspaceOption', { name: group.name })}
+                </option>
+              ))}
+            </select>
             <select value={filters.source} onChange={(event) => setFilter('source', event.target.value)}>
               <option value="all">{t('allSources')}</option>
               {sources.map((source) => (
@@ -304,14 +459,6 @@ export default function App(): React.JSX.Element {
               <option value="created-desc">{t('created')}</option>
               <option value="title-asc">{t('titleSort')}</option>
             </select>
-            <label className="compact-check">
-              <input
-                type="checkbox"
-                checked={filters.showInternal}
-                onChange={(event) => setFilter('showInternal', event.target.checked)}
-              />
-              <span>{t('showInternal')}</span>
-            </label>
           </section>
 
           {environment.externalCodexProcesses > 0 && (
@@ -321,14 +468,40 @@ export default function App(): React.JSX.Element {
             </div>
           )}
 
+          {desktopRecents.state === 'stale' && (
+            <div className="process-warning process-warning--recents">
+              <DatabaseZap size={15} aria-hidden="true" />
+              <span>{t('recentsStale', { count: desktopRecents.staleCount })}</span>
+              <button
+                className="button button--quiet process-warning__action"
+                type="button"
+                disabled={busy}
+                onClick={() => setRecentsRepairOpen(true)}
+              >
+                <DatabaseZap size={15} aria-hidden="true" />
+                {t('recentsRepair')}
+              </button>
+            </div>
+          )}
+
           <section className="selection-bar" aria-live="polite">
-            {selected.size === 0 ? (
+            {selection.roots.size === 0 ? (
               <span className="selection-placeholder">
-                {visibleThreads.length} {t('thread').toLocaleLowerCase()}
+                {t('taskCount', {
+                  count: visibleThreads.filter((thread) => !thread.internal).length
+                })}
               </span>
             ) : (
               <>
-                <strong>{t('selected', { count: selected.size })}</strong>
+                <strong>
+                  {selection.implicit.size > 0
+                    ? t('selectedWithDescendants', {
+                        total: selection.effective.size,
+                        explicit: selection.roots.size,
+                        automatic: selection.implicit.size
+                      })
+                    : t('selected', { count: selection.roots.size })}
+                </strong>
                 <button
                   className="icon-button icon-button--small"
                   type="button"
@@ -380,8 +553,9 @@ export default function App(): React.JSX.Element {
                 <button
                   className="button button--quiet-danger"
                   type="button"
-                  disabled={busy || selectedThreads.every((thread) => thread.pinned)}
-                  onClick={() => setDeleteIds([...selected])}
+                  title={t('deleteHint')}
+                  disabled={busy || selectedRootThreads.every((thread) => thread.pinned)}
+                  onClick={() => setDeleteIds([...selection.roots])}
                 >
                   <Trash2 size={15} aria-hidden="true" />
                   {t('delete')}
@@ -414,7 +588,7 @@ export default function App(): React.JSX.Element {
               </button>
             </div>
           </div>
-        ) : visibleThreads.length === 0 ? (
+        ) : matchedThreads.length === 0 ? (
           <div className="center-state">
             <Inbox size={30} aria-hidden="true" />
             <h2>{t('noThreadsTitle')}</h2>
@@ -422,13 +596,19 @@ export default function App(): React.JSX.Element {
           </div>
         ) : (
           <ThreadTable
-            threads={visibleThreads}
-            selected={selected}
+            rows={treeRows}
+            groups={viewMode === 'grouped' ? rowGroups : null}
+            collapsedGroups={collapsedGroups}
+            forceGroupsExpanded={filters.query.trim().length > 0}
+            selected={selection.effective}
+            implicitlySelected={selection.implicit}
             locale={settings.locale}
             allSelectableSelected={allSelectableSelected}
             someSelectableSelected={someSelectableSelected}
             onToggle={toggleThread}
             onToggleVisible={toggleVisible}
+            onToggleExpanded={toggleExpanded}
+            onToggleGroup={toggleGroup}
             onOpenDirectory={(path) => {
               void window.threadbox.openWorkingDirectory(path).then((message) => message && setError(message))
             }}
@@ -481,7 +661,21 @@ export default function App(): React.JSX.Element {
           externalProcesses={environment.externalCodexProcesses}
           busy={busy}
           onClose={() => setDeleteIds(null)}
-          onConfirm={(ids) => void runOperation(() => window.threadbox.deleteThreads(ids), true)}
+          onConfirm={(ids, trashWorkingDirectories) =>
+            void runOperation(
+              () => window.threadbox.deleteThreads(ids, { trashWorkingDirectories }),
+              true
+            )
+          }
+        />
+      )}
+
+      {recentsRepairOpen && desktopRecents.state === 'stale' && (
+        <RecentsRepairDialog
+          status={desktopRecents}
+          busy={busy}
+          onClose={() => setRecentsRepairOpen(false)}
+          onConfirm={() => void repairDesktopRecents()}
         />
       )}
     </div>

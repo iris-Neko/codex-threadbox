@@ -1,24 +1,35 @@
 import {
   Archive,
   ArchiveRestore,
+  ChevronDown,
+  ChevronRight,
+  Code2,
   Copy,
+  FolderKanban,
   FolderOpen,
+  MessageSquare,
   Pin,
   Trash2
 } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { Fragment, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ThreadRecord } from '../../../shared/contracts'
-import { formatTimestamp } from '../thread-utils'
+import { formatTimestamp, type ThreadRowGroup, type ThreadTreeRow } from '../thread-utils'
 
 interface ThreadTableProps {
-  threads: ThreadRecord[]
+  rows: ThreadTreeRow[]
+  groups: ThreadRowGroup[] | null
+  collapsedGroups: Set<string>
+  forceGroupsExpanded: boolean
   selected: Set<string>
+  implicitlySelected: Set<string>
   locale: string
   allSelectableSelected: boolean
   someSelectableSelected: boolean
   onToggle(id: string): void
   onToggleVisible(): void
+  onToggleExpanded(id: string, currentlyExpanded: boolean): void
+  onToggleGroup(id: string): void
   onOpenDirectory(path: string): void
   onCopyId(id: string): void
   onArchive(thread: ThreadRecord): void
@@ -59,13 +70,19 @@ function StateCell({ thread }: { thread: ThreadRecord }): React.JSX.Element {
 }
 
 export function ThreadTable({
-  threads,
+  rows,
+  groups,
+  collapsedGroups,
+  forceGroupsExpanded,
   selected,
+  implicitlySelected,
   locale,
   allSelectableSelected,
   someSelectableSelected,
   onToggle,
   onToggleVisible,
+  onToggleExpanded,
+  onToggleGroup,
   onOpenDirectory,
   onCopyId,
   onArchive,
@@ -79,6 +96,212 @@ export function ThreadTable({
       selectAllRef.current.indeterminate = someSelectableSelected && !allSelectableSelected
     }
   }, [allSelectableSelected, someSelectableSelected])
+
+  const renderRow = ({ thread, depth, hasChildren, expanded, matchesFilter }: ThreadTreeRow) => {
+    const automaticallyIncluded = implicitlySelected.has(thread.id)
+    const disabled = thread.status === 'active' || !matchesFilter
+    const mutationDisabled = disabled || automaticallyIncluded
+    const rowClassName = [
+      selected.has(thread.id) ? 'is-selected' : null,
+      automaticallyIncluded ? 'thread-row--auto-selected' : null,
+      depth > 0 ? 'thread-row--child' : null,
+      !matchesFilter ? 'thread-row--context' : null
+    ]
+      .filter(Boolean)
+      .join(' ')
+
+    return (
+      <tr key={thread.id} className={rowClassName || undefined}>
+        <td className="check-cell">
+          <span title={automaticallyIncluded ? t('includedByParentHint') : undefined}>
+            <input
+              type="checkbox"
+              checked={selected.has(thread.id)}
+              disabled={disabled || automaticallyIncluded}
+              title={
+                automaticallyIncluded
+                  ? t('includedByParentHint')
+                  : !matchesFilter
+                    ? t('contextCannotSelect')
+                    : thread.status === 'active'
+                      ? t('activeCannotSelect')
+                      : undefined
+              }
+              aria-label={`${t('thread')}: ${thread.title}`}
+              onChange={() => onToggle(thread.id)}
+            />
+          </span>
+        </td>
+        <td>
+          <div className="thread-cell" style={{ paddingLeft: `${Math.min(depth, 6) * 18}px` }}>
+            {hasChildren ? (
+              <button
+                className="tree-toggle"
+                type="button"
+                aria-expanded={expanded}
+                aria-label={t(expanded ? 'collapseSpawned' : 'expandSpawned', {
+                  title: thread.title
+                })}
+                title={t(expanded ? 'collapseSpawned' : 'expandSpawned', {
+                  title: thread.title
+                })}
+                onClick={() => onToggleExpanded(thread.id, expanded)}
+              >
+                {expanded ? (
+                  <ChevronDown size={16} aria-hidden="true" />
+                ) : (
+                  <ChevronRight size={16} aria-hidden="true" />
+                )}
+              </button>
+            ) : (
+              <span className="tree-spacer" aria-hidden="true" />
+            )}
+            <div className="thread-cell__body">
+              <div className="thread-title" title={thread.title}>
+                {thread.title}
+              </div>
+              <div className="thread-preview" title={thread.preview}>
+                {thread.preview || thread.id}
+              </div>
+              {thread.descendantCount > 0 && (
+                <span className="thread-meta">
+                  {t('descendants', { count: thread.descendantCount })}
+                </span>
+              )}
+              {automaticallyIncluded && (
+                <span className="thread-meta thread-meta--included">{t('includedByParent')}</span>
+              )}
+            </div>
+          </div>
+        </td>
+        <td>
+          <div className="path-cell" title={thread.cwd}>
+            {thread.cwd}
+          </div>
+        </td>
+        <td className="time-cell">{formatTimestamp(thread.updatedAt, locale)}</td>
+        <td>
+          <StateCell thread={thread} />
+        </td>
+        <td>
+          <span className="source-label">{thread.source}</span>
+        </td>
+        <td>
+          <div className="row-actions">
+            <button
+              className="icon-button icon-button--small"
+              type="button"
+              title={t('openDirectory')}
+              aria-label={t('openDirectory')}
+              onClick={() => onOpenDirectory(thread.cwd)}
+            >
+              <FolderOpen size={16} aria-hidden="true" />
+            </button>
+            <button
+              className="icon-button icon-button--small"
+              type="button"
+              title={t('copyId')}
+              aria-label={t('copyId')}
+              onClick={() => onCopyId(thread.id)}
+            >
+              <Copy size={15} aria-hidden="true" />
+            </button>
+            <button
+              className="icon-button icon-button--small"
+              type="button"
+              title={thread.archived ? t('unarchive') : t('archive')}
+              aria-label={thread.archived ? t('unarchive') : t('archive')}
+              disabled={mutationDisabled}
+              onClick={() => onArchive(thread)}
+            >
+              {thread.archived ? (
+                <ArchiveRestore size={16} aria-hidden="true" />
+              ) : (
+                <Archive size={16} aria-hidden="true" />
+              )}
+            </button>
+            <button
+              className="icon-button icon-button--small icon-button--danger"
+              type="button"
+              title={
+                automaticallyIncluded
+                  ? t('includedByParentHint')
+                  : thread.pinned
+                    ? t('pinnedCannotDelete')
+                    : t('deleteHint')
+              }
+              aria-label={t('delete')}
+              disabled={mutationDisabled || thread.pinned}
+              onClick={() => onDelete(thread)}
+            >
+              <Trash2 size={16} aria-hidden="true" />
+            </button>
+          </div>
+        </td>
+      </tr>
+    )
+  }
+
+  const renderGroupHeader = (group: ThreadRowGroup): React.JSX.Element => {
+    const collapsed = !forceGroupsExpanded && collapsedGroups.has(group.id)
+    const title = group.kind === 'standalone' ? t('standaloneTasks') : group.name
+    const kindLabel =
+      group.kind === 'desktopProject'
+        ? t('desktopProject')
+        : group.kind === 'standalone'
+          ? t('standaloneGroup')
+          : group.sources.length === 1 && group.sources[0] === 'vscode'
+            ? t('vscodeWorkspace')
+            : group.sources.length === 1 && group.sources[0] === 'cli'
+              ? t('cliWorkspace')
+              : t('localWorkspace')
+    const detail =
+      group.kind === 'standalone'
+        ? t('standaloneGroupHint')
+        : group.directories.length === 1
+          ? group.directories[0]
+          : t('groupDirectoryCount', { count: group.directories.length })
+    const GroupIcon =
+      group.kind === 'desktopProject'
+        ? FolderKanban
+        : group.kind === 'standalone'
+          ? MessageSquare
+          : Code2
+
+    return (
+      <tr className="thread-group-row">
+        <td colSpan={7}>
+          <button
+            className="thread-group-toggle"
+            type="button"
+            aria-expanded={!collapsed}
+            aria-label={t(collapsed ? 'expandGroup' : 'collapseGroup', { title })}
+            onClick={() => onToggleGroup(group.id)}
+          >
+            {collapsed ? (
+              <ChevronRight size={17} aria-hidden="true" />
+            ) : (
+              <ChevronDown size={17} aria-hidden="true" />
+            )}
+            <span className="thread-group-icon" aria-hidden="true">
+              <GroupIcon size={16} />
+            </span>
+            <span className="thread-group-body">
+              <span className="thread-group-line">
+                <strong>{title}</strong>
+                <span className="thread-group-kind">{kindLabel}</span>
+              </span>
+              <span className="thread-group-detail" title={detail}>{detail}</span>
+            </span>
+            <span className="thread-group-count">
+              {t('groupTaskCount', { count: group.taskCount })}
+              {group.spawnedCount > 0 && ` · ${t('spawnedTaskCount', { count: group.spawnedCount })}`}
+            </span>
+          </button>
+        </td>
+      </tr>
+    )
+  }
 
   return (
     <div className="table-scroll">
@@ -112,94 +335,17 @@ export function ThreadTable({
           </tr>
         </thead>
         <tbody>
-          {threads.map((thread) => {
-            const disabled = thread.status === 'active'
-            return (
-              <tr key={thread.id} className={selected.has(thread.id) ? 'is-selected' : undefined}>
-                <td className="check-cell">
-                  <input
-                    type="checkbox"
-                    checked={selected.has(thread.id)}
-                    disabled={disabled}
-                    title={disabled ? t('activeCannotSelect') : undefined}
-                    aria-label={`${t('thread')}: ${thread.title}`}
-                    onChange={() => onToggle(thread.id)}
-                  />
-                </td>
-                <td>
-                  <div className="thread-title" title={thread.title}>
-                    {thread.title}
-                  </div>
-                  <div className="thread-preview" title={thread.preview}>
-                    {thread.preview || thread.id}
-                  </div>
-                  {thread.descendantCount > 0 && (
-                    <span className="thread-meta">
-                      {t('descendants', { count: thread.descendantCount })}
-                    </span>
-                  )}
-                </td>
-                <td>
-                  <div className="path-cell" title={thread.cwd}>
-                    {thread.cwd}
-                  </div>
-                </td>
-                <td className="time-cell">{formatTimestamp(thread.updatedAt, locale)}</td>
-                <td>
-                  <StateCell thread={thread} />
-                </td>
-                <td>
-                  <span className="source-label">{thread.source}</span>
-                </td>
-                <td>
-                  <div className="row-actions">
-                    <button
-                      className="icon-button icon-button--small"
-                      type="button"
-                      title={t('openDirectory')}
-                      aria-label={t('openDirectory')}
-                      onClick={() => onOpenDirectory(thread.cwd)}
-                    >
-                      <FolderOpen size={16} aria-hidden="true" />
-                    </button>
-                    <button
-                      className="icon-button icon-button--small"
-                      type="button"
-                      title={t('copyId')}
-                      aria-label={t('copyId')}
-                      onClick={() => onCopyId(thread.id)}
-                    >
-                      <Copy size={15} aria-hidden="true" />
-                    </button>
-                    <button
-                      className="icon-button icon-button--small"
-                      type="button"
-                      title={thread.archived ? t('unarchive') : t('archive')}
-                      aria-label={thread.archived ? t('unarchive') : t('archive')}
-                      disabled={disabled}
-                      onClick={() => onArchive(thread)}
-                    >
-                      {thread.archived ? (
-                        <ArchiveRestore size={16} aria-hidden="true" />
-                      ) : (
-                        <Archive size={16} aria-hidden="true" />
-                      )}
-                    </button>
-                    <button
-                      className="icon-button icon-button--small icon-button--danger"
-                      type="button"
-                      title={thread.pinned ? t('pinnedCannotDelete') : t('delete')}
-                      aria-label={t('delete')}
-                      disabled={disabled || thread.pinned}
-                      onClick={() => onDelete(thread)}
-                    >
-                      <Trash2 size={16} aria-hidden="true" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            )
-          })}
+          {groups
+            ? groups.map((group) => {
+                const collapsed = !forceGroupsExpanded && collapsedGroups.has(group.id)
+                return (
+                  <Fragment key={group.id}>
+                    {renderGroupHeader(group)}
+                    {!collapsed && group.rows.map(renderRow)}
+                  </Fragment>
+                )
+              })
+            : rows.map(renderRow)}
         </tbody>
       </table>
     </div>

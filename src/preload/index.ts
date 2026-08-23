@@ -4,7 +4,8 @@ import { IPC_CHANNELS, type AppSettings, type ThreadboxApi } from '../shared/con
 const api: ThreadboxApi = {
   getEnvironmentStatus: () => ipcRenderer.invoke(IPC_CHANNELS.environment),
   listThreads: () => ipcRenderer.invoke(IPC_CHANNELS.listThreads),
-  deleteThreads: (ids) => ipcRenderer.invoke(IPC_CHANNELS.deleteThreads, ids),
+  deleteThreads: (ids, options) => ipcRenderer.invoke(IPC_CHANNELS.deleteThreads, ids, options),
+  repairDesktopRecents: () => ipcRenderer.invoke(IPC_CHANNELS.repairDesktopRecents),
   archiveThreads: (ids) => ipcRenderer.invoke(IPC_CHANNELS.archiveThreads, ids),
   unarchiveThreads: (ids) => ipcRenderer.invoke(IPC_CHANNELS.unarchiveThreads, ids),
   setPinned: (ids, pinned) => ipcRenderer.invoke(IPC_CHANNELS.setPinned, ids, pinned),

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RpcClientLike } from '../../src/main/app-server-client'
+import type { WorkingDirectoryCleanerLike } from '../../src/main/directory-cleaner'
 import { ThreadService } from '../../src/main/thread-service'
 import type { EnvironmentStatus } from '../../src/shared/contracts'
 import type { Thread } from '../../src/shared/protocol/generated/v2/Thread'
@@ -76,6 +77,15 @@ class FakeClient implements RpcClientLike {
   async restart(): Promise<void> {}
 }
 
+class FakeDirectoryCleaner implements WorkingDirectoryCleanerLike {
+  readonly calls: string[][] = []
+
+  async cleanup(paths: string[]) {
+    this.calls.push(paths)
+    return { requested: paths, trashed: paths, failed: [], skipped: [] }
+  }
+}
+
 describe('ThreadService', () => {
   it('follows pagination cursors until all pages are loaded', async () => {
     const pages = [thread('first'), thread('second')]
@@ -107,7 +117,7 @@ describe('ThreadService', () => {
   })
 
   it('merges active and archived tasks and calculates descendants', async () => {
-    const parent = thread('parent', { name: 'Parent' })
+    const parent = thread('parent', { name: 'Parent', projectId: 'project-one' })
     const child = thread('child', {
       parentThreadId: 'parent',
       source: {
@@ -129,6 +139,7 @@ describe('ThreadService', () => {
     expect(result.threads).toHaveLength(3)
     expect(result.threads.find((item) => item.id === 'parent')).toMatchObject({
       title: 'Parent',
+      projectId: 'project-one',
       descendantCount: 1,
       archived: false
     })
@@ -161,6 +172,52 @@ describe('ThreadService', () => {
     const result = await service.deleteThreads(['one', 'two'])
     expect(result.failed).toEqual([{ id: 'one', message: 'delete failed' }])
     expect(result.succeeded).toEqual(['two'])
+  })
+
+  it('moves only explicitly selected directories after their tasks are deleted', async () => {
+    const cleaner = new FakeDirectoryCleaner()
+    const client = new FakeClient(
+      [thread('keep', { cwd: '/workspace/keep' }), thread('trash', { cwd: '/workspace/trash' })],
+      []
+    )
+    const service = new ThreadService(client, cleaner)
+
+    const result = await service.deleteThreads(['keep', 'trash'], {
+      trashWorkingDirectories: ['/workspace/trash']
+    })
+
+    expect(cleaner.calls).toEqual([['/workspace/trash']])
+    expect(result.directoryCleanup?.trashed).toEqual(['/workspace/trash'])
+  })
+
+  it('keeps a directory when another remaining task still uses it', async () => {
+    const cleaner = new FakeDirectoryCleaner()
+    const client = new FakeClient(
+      [thread('delete', { cwd: '/workspace/shared' }), thread('remain', { cwd: '/workspace/shared' })],
+      []
+    )
+    const service = new ThreadService(client, cleaner)
+
+    const result = await service.deleteThreads(['delete'], {
+      trashWorkingDirectories: ['/workspace/shared']
+    })
+
+    expect(cleaner.calls).toHaveLength(0)
+    expect(result.directoryCleanup?.skipped[0]?.message).toMatch(/remaining Codex task/)
+  })
+
+  it('keeps a directory when its task deletion fails', async () => {
+    const cleaner = new FakeDirectoryCleaner()
+    const client = new FakeClient([thread('failed', { cwd: '/workspace/failed' })], [])
+    client.failDeleteId = 'failed'
+    const service = new ThreadService(client, cleaner)
+
+    const result = await service.deleteThreads(['failed'], {
+      trashWorkingDirectories: ['/workspace/failed']
+    })
+
+    expect(cleaner.calls).toHaveLength(0)
+    expect(result.directoryCleanup?.skipped[0]?.message).toMatch(/did not succeed/)
   })
 
   it('reports pinning as unsupported without sending a mutation', async () => {
