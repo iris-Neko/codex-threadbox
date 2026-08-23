@@ -1,5 +1,5 @@
 import { build } from 'esbuild'
-import { copyFile, mkdir, rm } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, rm } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
 const packageRoot = resolve(import.meta.dirname, '..')
@@ -28,6 +28,7 @@ await Promise.all([
     platform: 'browser',
     format: 'iife',
     target: 'es2022',
+    jsx: 'automatic',
     legalComments: 'none',
     loader: { '.css': 'css' }
   }),
@@ -43,3 +44,8 @@ await Promise.all([
   }),
   copyFile(resolve(packageRoot, '../../resources/icon.png'), resolve(dist, 'icon.png'))
 ])
+
+const webviewBundle = await readFile(resolve(dist, 'webview.js'), 'utf8')
+if (webviewBundle.includes('React.createElement(')) {
+  throw new Error('Webview bundle contains classic JSX output without a guaranteed React binding.')
+}
