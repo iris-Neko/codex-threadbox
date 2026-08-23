@@ -3,7 +3,7 @@
   "version": "0.3.0",
   "description": "Headless task manager for Codex App Server.",
   "license": "MIT",
-  "author": "iris-Neko",
+  "author": "irisNeko",
   "type": "module",
   "bin": {
     "threadbox": "dist/threadbox.cjs"
