@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DeleteDialog } from '../../src/renderer/src/components/DeleteDialog'
-import '../../src/renderer/src/i18n'
+import { DeleteDialog } from '../../packages/ui/src/components/DeleteDialog'
+import '../../packages/ui/src/i18n'
 import type { ThreadRecord } from '../../src/shared/contracts'
 
 afterEach(cleanup)
@@ -38,6 +38,7 @@ describe('DeleteDialog', () => {
           record('active', { status: 'active', ineligibleReason: 'active' })
         ]}
         externalProcesses={1}
+        allowDirectoryTrash
         busy={false}
         onClose={() => undefined}
         onConfirm={confirm}
@@ -64,6 +65,7 @@ describe('DeleteDialog', () => {
           record('trash', { cwd: '/workspace/trash' })
         ]}
         externalProcesses={0}
+        allowDirectoryTrash
         busy={false}
         onClose={() => undefined}
         onConfirm={confirm}

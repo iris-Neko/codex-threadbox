@@ -6,7 +6,7 @@ Thanks for helping improve Threadbox for Codex.
 
 1. Install Node.js 22 or newer and npm.
 2. Run `npm install`.
-3. Run `npm run dev` for the desktop app.
+3. Run `npm run dev` for the desktop app, `npm run build:cli` for the CLI, or `npm run build:vscode` for the extension.
 
 Codex is a user runtime dependency, not an application dependency. The exact `@openai/codex` version in `devDependencies` exists only for protocol generation and isolated integration checks.
 
@@ -18,6 +18,9 @@ Run:
 npm run lint
 npm run typecheck
 npm test
+npm run test:cli
+npm run test:cli-package
+npm run test:vscode
 npm run test:integration
 npm run test:e2e
 npm run package
@@ -29,9 +32,10 @@ Any change to permanent deletion, archive state, process detection, CLI discover
 
 ## Project boundaries
 
-- Keep filesystem and process access in the Electron main process.
-- Keep the renderer sandboxed and expose only typed, purpose-specific preload APIs.
+- Keep host filesystem and process access in Electron main, the CLI host, or the VS Code extension host.
+- Keep Electron and Webview renderers sandboxed and expose only typed, purpose-specific bridges.
 - Use App Server APIs for task mutations. Do not add SQLite or rollout-file mutation fallbacks.
+- Never add working-directory deletion or desktop Recents access to the CLI or VS Code host.
 - Do not log task titles, previews, paths, IDs, or conversation content.
 - Keep English and Simplified Chinese strings in sync.
 

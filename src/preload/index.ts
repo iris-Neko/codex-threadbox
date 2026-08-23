@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IPC_CHANNELS, type AppSettings, type ThreadboxApi } from '../shared/contracts'
 
 const api: ThreadboxApi = {
+  getPlatformCapabilities: () => ipcRenderer.invoke(IPC_CHANNELS.platformCapabilities),
   getEnvironmentStatus: () => ipcRenderer.invoke(IPC_CHANNELS.environment),
   listThreads: () => ipcRenderer.invoke(IPC_CHANNELS.listThreads),
   deleteThreads: (ids, options) => ipcRenderer.invoke(IPC_CHANNELS.deleteThreads, ids, options),

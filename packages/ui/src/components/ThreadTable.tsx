@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import { Fragment, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { ThreadRecord } from '../../../shared/contracts'
+import type { ThreadRecord } from '../../../../src/shared/contracts'
 import { formatTimestamp, type ThreadRowGroup, type ThreadTreeRow } from '../thread-utils'
 
 interface ThreadTableProps {
@@ -26,6 +26,7 @@ interface ThreadTableProps {
   locale: string
   allSelectableSelected: boolean
   someSelectableSelected: boolean
+  allowOpenDirectory: boolean
   onToggle(id: string): void
   onToggleVisible(): void
   onToggleExpanded(id: string, currentlyExpanded: boolean): void
@@ -79,6 +80,7 @@ export function ThreadTable({
   locale,
   allSelectableSelected,
   someSelectableSelected,
+  allowOpenDirectory,
   onToggle,
   onToggleVisible,
   onToggleExpanded,
@@ -188,7 +190,7 @@ export function ThreadTable({
         </td>
         <td>
           <div className="row-actions">
-            <button
+            {allowOpenDirectory && <button
               className="icon-button icon-button--small"
               type="button"
               title={t('openDirectory')}
@@ -196,7 +198,7 @@ export function ThreadTable({
               onClick={() => onOpenDirectory(thread.cwd)}
             >
               <FolderOpen size={16} aria-hidden="true" />
-            </button>
+            </button>}
             <button
               className="icon-button icon-button--small"
               type="button"

@@ -1,0 +1,46 @@
+{
+  "name": "codex-threadbox",
+  "version": "0.3.0",
+  "description": "Headless task manager for Codex App Server.",
+  "license": "MIT",
+  "author": "iris-Neko",
+  "type": "module",
+  "bin": {
+    "threadbox": "dist/threadbox.cjs"
+  },
+  "files": [
+    "dist/threadbox.cjs",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/iris-Neko/codex-threadbox.git"
+  },
+  "homepage": "https://github.com/iris-Neko/codex-threadbox",
+  "bugs": "https://github.com/iris-Neko/codex-threadbox/issues",
+  "keywords": [
+    "codex",
+    "cli",
+    "thread-manager",
+    "headless"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "pack:check": "npm pack --dry-run"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^8.6.0",
+    "commander": "^15.0.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

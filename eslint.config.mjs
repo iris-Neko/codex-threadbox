@@ -8,6 +8,9 @@ export default tseslint.config(
   {
     ignores: [
       'dist/**',
+      'packages/*/dist/**',
+      'packages/*/test-dist/**',
+      '**/.vscode-test/**',
       'out/**',
       'coverage/**',
       'tests/fixtures/**',
@@ -16,6 +19,13 @@ export default tseslint.config(
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
+  {
+    languageOptions: {
+      parserOptions: {
+        tsconfigRootDir: import.meta.dirname
+      }
+    }
+  },
   {
     files: ['src/renderer/src/**/*.{ts,tsx}'],
     languageOptions: {
@@ -31,7 +41,13 @@ export default tseslint.config(
     }
   },
   {
-    files: ['src/main/**/*.ts', 'src/preload/**/*.ts', 'scripts/**/*.mjs', 'tests/**/*.ts'],
+    files: [
+      'src/main/**/*.ts',
+      'src/preload/**/*.ts',
+      'scripts/**/*.mjs',
+      'packages/*/scripts/**/*.mjs',
+      'tests/**/*.ts'
+    ],
     languageOptions: {
       globals: globals.node
     }

@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented here.
 
+## 0.3.0 - 2026-08-23
+
+### Added
+
+- Publish the Node.js `codex-threadbox` package with the `threadbox` command for SSH and headless hosts.
+- Add interactive task search, grouping, spawned-task folding, multi-selection, archive, pin, and protected permanent deletion to the CLI.
+- Add explicit script commands and stable `schemaVersion: 1` JSON output with fixed exit codes.
+- Add the `iris-neko.threadbox-for-codex` workspace extension for local and Remote SSH, Dev Container, and Codespaces hosts.
+- Reuse the complete React manager in a strict-CSP VS Code Webview with request IDs, timeouts, argument validation, and workspace-trust enforcement.
+- Extract App Server, runtime, task service, filters, and UI into private shared workspace packages.
+- Verify the packed npm CLI on Windows, macOS, and Linux and install/start the packaged VSIX in Extension Test.
+
+### Changed
+
+- Release one cross-platform npm CLI package rather than platform-specific standalone binaries.
+- Hide desktop-only directory Trash and Recents repair features in CLI and VS Code.
+- Terminate owned App Server process trees reliably during shutdown and ignore late exits from replaced processes.
+
 ## 0.2.0 - 2026-08-23
 
 ### Added

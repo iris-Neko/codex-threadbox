@@ -1,48 +1,56 @@
 # Architecture
 
-Threadbox is an Electron application split into four trust boundaries.
+Threadbox is an npm workspace with shared core and UI packages plus three host adapters.
 
-## Renderer
+## Shared core
 
-React renders the grouped hierarchical task table, filters, settings, and confirmation dialogs. Desktop tasks with a `projectId` are grouped by that stable identifier, VS Code/CLI tasks are grouped by their recorded working directory, and projectless App Server tasks are grouped as independent work. Spawned tasks inherit their parent's group and fold under their parent row; matching descendant searches reveal their parent chain. The renderer has no Node.js access and cannot invoke arbitrary IPC channels. It receives normalized `ThreadRecord` objects and bounded stale-catalog summaries rather than raw protocol messages or database access.
+`@threadbox/core` owns Codex CLI discovery, minimum-version checks, the newline-delimited JSON-RPC App Server client, pagination, normalized task records, parent/descendant relationships, filtering, and protected sequential batch operations. It accepts an injected client descriptor and environment so the desktop app, CLI, and VS Code extension identify themselves and use the correct host's `CODEX_BINARY` and `CODEX_HOME`.
 
-## Preload
+`AppServerClient` performs `initialize`, sends `initialized`, routes responses by numeric ID, ignores unrelated notifications, applies timeouts, rejects pending requests on exit, and reconnects on the next request. Shutdown terminates the owned App Server process tree, including npm command shims on Windows.
 
-The sandboxed preload exposes a small typed API through `contextBridge`: environment status, thread listing and mutations, an explicit desktop Recents repair command, working-directory opening, executable selection, and settings.
+`ThreadService` pages through active and archived `thread/list` results using all source kinds. It preserves `projectId`, derives the parent/child graph, and accepts unknown protocol response fields. It never reads full conversation turns.
 
-## Main process
+## Shared UI
 
-The main process validates IPC arguments, owns local settings, opens known working directories, discovers Codex CLI, starts App Server, and performs explicitly requested working-directory cleanup through the operating system Trash. It also owns the narrowly scoped desktop Recents catalog repairer. A renderer cannot supply a command line, database path, SQL, thread catalog host, arbitrary path, or trash a directory that is not attached to a selected deletable task.
+`@threadbox/ui` is the React task manager. It receives an injected typed `ThreadboxApi`; it has no Electron, VS Code, filesystem, or Node dependency. `PlatformCapabilities` hides host-only controls such as desktop Recents repair, directory Trash, native executable selection, and current-workspace filtering.
 
-## App Server integration
+Desktop Project tasks are grouped by `projectId`, VS Code and CLI tasks by working directory, and projectless desktop tasks separately. Spawned tasks fold under their parent row, and selecting a parent automatically includes descendants.
 
-`AppServerClient` owns one newline-delimited JSON-RPC connection. It performs `initialize`, sends `initialized`, routes responses by numeric ID, ignores unrelated notifications, applies request timeouts, rejects pending calls when the process exits, and can restart cleanly.
+## Desktop host
 
-`ThreadService` pages through active and archived `thread/list` results using all source kinds. It preserves each thread's `projectId`, normalizes the display model, derives the parent/child graph, and executes mutations sequentially. Project display names are derived from recorded task directories because the 0.149.0 production API does not expose a stable project-name listing method.
+Electron runs the renderer with sandboxing, context isolation, and no Node integration. A preload exposes only the typed API over fixed IPC channels. The main process validates IDs and known paths, stores language and optional CLI path settings, starts App Server, opens working directories, and owns two desktop-only adapters:
 
-Permanent deletion refreshes inventory first. Running and pinned tasks are skipped. If both a parent and descendant are selected, only the parent is submitted because App Server deletion cascades to descendants.
+- selected working-directory cleanup through the operating system Trash;
+- repair of orphaned rows in Codex desktop's derived Recents catalog.
 
-Working-directory cleanup is opt-in per directory and runs only after its owning task is deleted. The main process rejects shared, root, home, Codex data, system, application-containing, symbolic-link, and missing paths. It uses Electron's Trash integration and never falls back to recursive permanent deletion.
+The renderer cannot supply SQL, arbitrary IPC channels, catalog hosts, or directories unrelated to selected tasks.
+
+## CLI host
+
+The `codex-threadbox` npm package installs the `threadbox` command and requires Node.js 22.13 or newer. It supports a prompt-based interactive manager and explicit script commands. `--json` uses a stable `schemaVersion: 1` envelope and never emits ANSI or progress animation.
+
+The CLI accepts task IDs only for mutations. It does not contain the desktop Recents or directory Trash adapters and has no parameter, including a hidden one, that recursively deletes a working directory.
+
+## VS Code host
+
+The extension declares `extensionKind: ["workspace"]`, so Remote SSH, Dev Containers, and Codespaces run the extension, Codex CLI, App Server, and `CODEX_HOME` on the remote host. It opens the shared UI in an editor Webview.
+
+The Webview has a strict nonce CSP, bundled local resources, no Node access, request IDs, timeouts, a fixed method allowlist, and per-method argument validation. The extension rechecks workspace trust before any Codex probe, task listing, mutation, or folder-open request. Machine-scoped settings configure the remote CLI path, Codex home, and language.
+
+## Deletion safety
+
+Permanent deletion refreshes inventory first. Running and pinned tasks are skipped. If a parent and descendant are selected, only the highest selected parent is submitted because App Server deletion cascades. Requests run sequentially, and one failure does not stop the remaining tasks.
+
+Only the desktop adapter can move explicitly checked `cwd` values to Trash, and only after the owning task deletion succeeds. Roots, home, Codex data, system locations, application-containing paths, symbolic links, missing paths, and directories referenced by remaining tasks are preserved. Trash failure never falls back to permanent filesystem deletion.
 
 ## Desktop Recents catalog
 
-Codex desktop maintains a derived sidebar catalog in `~/.codex/sqlite/codex-dev.db`. Because App Server notifications are process-local, a deletion made by Threadbox can remove the task and rollout without reaching the already-created desktop catalog row. `DesktopRecentsRepair` reads only visible `host_id = 'local'` catalog entries, compares their IDs with a freshly paged App Server inventory, and reports entries with no task record.
+Codex desktop maintains a derived sidebar catalog in `~/.codex/sqlite/codex-dev.db`. App Server deletion from another process can leave an orphaned catalog row. `DesktopRecentsRepair` compares visible local-host rows with a fresh App Server inventory.
 
-Repair is explicit and limited to those orphaned rows. Before a transaction, Threadbox uses SQLite's online backup API and verifies the result with `PRAGMA integrity_check`. The write statement is fixed in application code, targets exact thread IDs, ignores cloud hosts and already-hidden candidates, and increments the catalog revision. Backup or schema validation failure aborts the repair. Task state databases and JSONL rollouts are never edited.
+Repair is explicit. It first creates an SQLite online backup under `~/.codex/backups_threadbox/desktop-recents` and verifies it with `PRAGMA integrity_check`. Fixed statements target exact orphan IDs, ignore cloud hosts, and do not alter task state databases, JSONL rollouts, or project files.
 
-## Compatibility
+## Compatibility and local data
 
-The v0.1 baseline is Codex CLI `0.149.0`. Generated TypeScript protocol files are committed under `src/shared/protocol/generated`. Unknown response fields are tolerated at runtime.
+Codex CLI `0.149.0` is the v0.3 minimum baseline. Generated TypeScript protocol files are committed under `src/shared/protocol/generated`; capabilities added after the baseline are gated at runtime.
 
-Features added after the baseline, currently pin metadata and mutation, are runtime capability-gated. Threadbox does not emulate missing task APIs through direct state-file edits; the desktop Recents exception applies only to its disposable derived sidebar catalog.
-
-## Local data
-
-Threadbox stores only:
-
-- interface language;
-- optional custom Codex executable path.
-
-It does not persist thread data or conversation content. App settings live in Electron's platform-specific application data directory.
-
-When Recents repair is used, timestamped backups of the derived desktop catalog are stored under `~/.codex/backups_threadbox/desktop-recents` for manual recovery.
+Threadbox has no telemetry and persists no task or conversation copy. Desktop stores interface language and optional CLI path. VS Code uses machine-scoped settings. The CLI stores no Threadbox settings.

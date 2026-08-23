@@ -10,7 +10,7 @@ import {
   resolveThreadSelection,
   selectThreadRoots,
   toggleThreadSelection
-} from '../../src/renderer/src/thread-utils'
+} from '../../packages/core/src/thread-utils'
 
 function record(overrides: Partial<ThreadRecord>): ThreadRecord {
   return {

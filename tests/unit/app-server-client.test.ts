@@ -3,11 +3,12 @@
 import { spawn } from 'node:child_process'
 import { resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { AppServerClient } from '../../src/main/app-server-client'
-import type { CodexRuntimeLike } from '../../src/main/codex-runtime'
+import { AppServerClient } from '../../packages/core/src/app-server-client'
+import type { CodexRuntimeLike } from '../../packages/core/src/codex-runtime'
 
 const fixture = resolve('tests/fixtures/fake-app-server.cjs')
 const clients: AppServerClient[] = []
+const descriptor = { name: 'threadbox_test', title: 'Threadbox Test', version: '0.3.0' }
 
 function runtime(): CodexRuntimeLike {
   return {
@@ -34,7 +35,7 @@ afterEach(() => {
 
 describe('AppServerClient', () => {
   it('initializes before requests and ignores interleaved notifications', async () => {
-    const client = new AppServerClient(runtime())
+    const client = new AppServerClient(runtime(), descriptor)
     clients.push(client)
 
     await expect(client.request('test/echo', { hello: 'world' })).resolves.toEqual({
@@ -44,14 +45,14 @@ describe('AppServerClient', () => {
   })
 
   it('times out unanswered requests', async () => {
-    const client = new AppServerClient(runtime())
+    const client = new AppServerClient(runtime(), descriptor)
     clients.push(client)
 
     await expect(client.request('test/timeout', {}, 30)).rejects.toThrow('test/timeout timed out')
   })
 
   it('rejects a pending request when the server exits and can start again', async () => {
-    const client = new AppServerClient(runtime())
+    const client = new AppServerClient(runtime(), descriptor)
     clients.push(client)
 
     await expect(client.request('test/crash')).rejects.toThrow('exited with code 2')

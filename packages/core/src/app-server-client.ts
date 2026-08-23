@@ -1,7 +1,12 @@
 import { createInterface, type Interface } from 'node:readline'
-import packageJson from '../../package.json'
-import type { ChildProcess } from 'node:child_process'
+import { spawnSync, type ChildProcess } from 'node:child_process'
 import type { CodexRuntimeLike, RuntimeProbe } from './codex-runtime'
+
+export interface AppServerClientDescriptor {
+  name: string
+  title: string
+  version: string
+}
 
 interface RpcSuccess<T> {
   id: number
@@ -31,15 +36,29 @@ export interface RpcClientLike {
   restart(): Promise<void>
 }
 
+function terminateChild(child: ChildProcess): void {
+  if (!child.pid || child.exitCode !== null || child.killed) return
+  if (process.platform === 'win32') {
+    spawnSync('taskkill.exe', ['/pid', String(child.pid), '/t', '/f'], {
+      windowsHide: true,
+      stdio: 'ignore'
+    })
+    return
+  }
+  child.kill('SIGTERM')
+}
+
 export class AppServerClient implements RpcClientLike {
   private child: ChildProcess | null = null
   private reader: Interface | null = null
   private pending = new Map<number, PendingRequest>()
   private nextId = 1
   private starting: Promise<void> | null = null
-  private stoppedIntentionally = false
 
-  constructor(private readonly runtime: CodexRuntimeLike) {}
+  constructor(
+    private readonly runtime: CodexRuntimeLike,
+    private readonly descriptor: AppServerClientDescriptor
+  ) {}
 
   getProbe(force = false): Promise<RuntimeProbe> {
     return this.runtime.probe(force)
@@ -56,13 +75,13 @@ export class AppServerClient implements RpcClientLike {
   }
 
   stop(): void {
-    this.stoppedIntentionally = true
+    const child = this.child
     this.reader?.close()
     this.reader = null
-    this.child?.kill()
     this.child = null
     this.starting = null
     this.rejectPending(new Error('Codex app-server stopped.'))
+    if (child) terminateChild(child)
   }
 
   private async ensureStarted(): Promise<void> {
@@ -81,25 +100,26 @@ export class AppServerClient implements RpcClientLike {
       throw new Error(probe.status.message ?? 'Codex CLI is not ready.')
     }
 
-    this.stoppedIntentionally = false
     const child = this.runtime.spawnAppServer(probe.command)
     if (!child.stdout || !child.stdin) throw new Error('Codex app-server did not expose stdio.')
 
     this.child = child
     this.reader = createInterface({ input: child.stdout })
     this.reader.on('line', (line) => this.handleLine(line))
-    child.once('error', (error) => this.handleExit(error))
+    child.once('error', (error) => {
+      if (this.child === child) this.handleExit(error)
+    })
     child.once('exit', (code) => {
-      if (!this.stoppedIntentionally) {
+      if (this.child === child) {
         this.handleExit(new Error(`Codex app-server exited with code ${code ?? 'unknown'}.`))
       }
     })
 
     await this.sendRequest('initialize', {
       clientInfo: {
-        name: 'codex_threadbox',
-        title: 'Threadbox for Codex',
-        version: packageJson.version
+        name: this.descriptor.name,
+        title: this.descriptor.title,
+        version: this.descriptor.version
       }
     })
     this.sendNotification('initialized', {})

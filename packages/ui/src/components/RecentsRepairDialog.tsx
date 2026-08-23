@@ -1,7 +1,7 @@
 import { AlertTriangle, DatabaseBackup, Wrench } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { DesktopRecentsStatus } from '../../../shared/contracts'
+import type { DesktopRecentsStatus } from '../../../../src/shared/contracts'
 import { Modal } from './Modal'
 
 interface RecentsRepairDialogProps {

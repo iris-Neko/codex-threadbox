@@ -1,12 +1,12 @@
 # Threadbox for Codex
 
-**本地运行、跨平台的 Codex 任务记录管理器。**
+**本地运行、覆盖桌面、终端和远程服务器的跨平台 Codex 任务记录管理器。**
 
 [English](README.md)
 
 ![Threadbox 任务列表](docs/images/threadbox-main.png)
 
-Threadbox 将所有工作目录中的 Codex CLI 和桌面端任务记录汇总到一个可搜索列表。所有任务操作都通过官方 [Codex App Server](https://learn.chatgpt.com/docs/app-server) 执行。另有一个需要单独确认的修复工具，会先备份并校验数据库，再清理 Codex 桌面端“最近任务”的孤儿派生索引；它不会修改任务状态、JSONL 对话文件或项目文件。
+Threadbox 将所有工作目录中的 Codex 任务记录汇总到一个可搜索列表。Electron 桌面版、无头 CLI 和 VS Code 插件共用官方 [Codex App Server](https://learn.chatgpt.com/docs/app-server) 核心。桌面版另外提供单独确认的目录回收站和 Codex 桌面端“最近任务”派生索引修复适配器。
 
 > Threadbox for Codex 是独立社区项目，与 OpenAI 没有隶属或背书关系。
 
@@ -27,10 +27,24 @@ Threadbox 将所有工作目录中的 Codex CLI 和桌面端任务记录汇总�
 
 所有处理均在本机完成。Threadbox 没有遥测，不调用模型，不上传或保存聊天内容副本。
 
+## 选择使用方式
+
+| 能力 | 桌面版 | CLI | VS Code / Remote |
+| --- | --- | --- | --- |
+| 列表、搜索、分组、归档、置顶和删除任务记录 | 支持 | 支持 | 支持 |
+| 管理 Remote SSH、Dev Container 或 Codespaces 所在主机 | 不支持 | 支持 | 支持 |
+| 打开任务工作目录 | 支持 | 不支持 | 支持 |
+| 将所选工作目录移入系统回收站 | 支持 | 不支持 | 不支持 |
+| 修复 Codex 桌面端派生的“最近任务”目录 | 支持 | 不支持 | 不支持 |
+
+CLI 和 VS Code 插件始终保留工作目录，不提供递归删目录的隐藏参数。
+
 ## 环境要求
 
-- Windows 10/11、macOS 或现代 Linux 桌面。
 - 系统 `PATH` 中存在 Codex CLI `0.149.0` 或更新版本。
+- 桌面版：Windows 10/11、macOS 或现代 Linux 桌面。
+- CLI：Node.js `22.13.0` 或更新版本。
+- 插件：VS Code `1.96.0` 或更新版本；远程环境需要在远端扩展宿主安装 Codex。
 
 ### 平台验证状态
 
@@ -48,7 +62,7 @@ npm install -g @openai/codex@latest
 
 也可以在 Threadbox 设置中选择 Codex 可执行文件，或配置 `CODEX_BINARY`。
 
-## 安装
+## 桌面版安装
 
 从 [GitHub Releases](https://github.com/iris-Neko/codex-threadbox/releases) 下载对应平台的安装包。
 
@@ -58,11 +72,36 @@ npm install -g @openai/codex@latest
 
 每个 Release 都附带 `SHA256SUMS.txt`。
 
+## CLI 安装
+
+无需安装直接运行：
+
+```bash
+npx codex-threadbox
+```
+
+或全局安装：
+
+```bash
+npm install -g codex-threadbox
+threadbox
+```
+
+在 TTY 中直接运行 `threadbox` 会进入交互管理器。脚本化命令包括 `status`、`list`、`archive`、`unarchive`、`pin`、`unpin` 和 `delete`；修改命令只接受明确的任务 ID。非交互删除必须传 `--yes`，`--json` 使用稳定的 `schemaVersion: 1` 输出。
+
+## VS Code 插件安装
+
+可从 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=iris-neko.threadbox-for-codex)、[Open VSX](https://open-vsx.org/extension/iris-neko/threadbox-for-codex) 或 Release 中的 VSIX 安装 **Threadbox for Codex**，然后在命令面板执行 **Threadbox: Open Manager**。
+
+插件声明了 `extensionKind: ["workspace"]`。在 Remote SSH、Dev Container 和 Codespaces 中，Codex CLI、`CODEX_HOME`、任务数据和 App Server 进程都位于远端。需要时使用 machine-scoped 的 `threadbox.codexBinary`、`threadbox.codexHome` 和 `threadbox.language` 设置。未信任工作区不会启动 Codex 或执行任务修改。
+
 ## 删除安全
 
 永久删除使用 App Server 的 `thread/delete`，它会同时删除派生子任务。Threadbox 会在删除前重新刷新列表，排除运行中和已置顶任务，将已选择的子任务合并到已选择的父任务下，并顺序执行根任务删除。因此单项失败不会中止剩余操作。
 
 项目文件默认保留。删除对话框列出的是表格中显示的确切任务 `cwd`，不是项目或工作区分组名称；只有明确勾选的目录才会在对应任务删除成功后移入操作系统回收站。磁盘根目录、用户主目录、Codex 数据目录、系统位置、Threadbox 自身路径，以及仍被其他 Codex 任务引用的目录会强制保留。移入回收站失败时，Threadbox 不会改用永久文件删除。
+
+CLI 和 VS Code 插件不包含目录回收站或“最近任务”修复适配器。它们的永久删除只通过 App Server 删除任务记录及派生任务，始终保留全部工作目录。
 
 Codex `0.149.0` 的稳定 App Server 协议还没有公开置顶元数据。Threadbox 会按运行时能力启用置顶按钮，不会为了绕过缺失的任务接口而修改 Codex 任务状态文件。
 
@@ -85,12 +124,14 @@ npm run dev
 npm run lint
 npm run typecheck
 npm test
+npm run test:cli
+npm run test:vscode
 npm run test:integration
 npm run test:e2e
 npm run package
 ```
 
-真实 CLI 集成测试使用临时隔离的 `CODEX_HOME`；单元测试和 Electron 测试使用假的 stdio App Server，不会修改真实 Codex 任务。
+真实 CLI 集成测试使用临时隔离的 `CODEX_HOME`；单元、CLI、VS Code 和 Electron 测试在需要修改操作时使用假的 stdio App Server，不会修改真实 Codex 任务。
 
 更多信息见[架构说明](docs/ARCHITECTURE.md)和[贡献指南](CONTRIBUTING.md)。
 

@@ -1,12 +1,15 @@
 import { app, BrowserWindow, Menu, shell } from 'electron'
 import { join } from 'node:path'
-import { AppServerClient } from './app-server-client'
-import { CodexRuntime } from './codex-runtime'
-import { WorkingDirectoryCleaner } from './directory-cleaner'
+import packageJson from '../../package.json'
+import {
+  AppServerClient,
+  CodexRuntime,
+  ThreadService,
+  WorkingDirectoryCleaner
+} from '@threadbox/core'
 import { DesktopRecentsRepair } from './desktop-recents-repair'
 import { registerIpcHandlers } from './ipc'
 import { SettingsStore } from './settings-store'
-import { ThreadService } from './thread-service'
 
 let mainWindow: BrowserWindow | null = null
 let appServerClient: AppServerClient | null = null
@@ -45,7 +48,11 @@ function createWindow(): void {
 app.whenReady().then(() => {
   const settings = new SettingsStore()
   const runtime = new CodexRuntime(settings)
-  appServerClient = new AppServerClient(runtime)
+  appServerClient = new AppServerClient(runtime, {
+    name: 'codex_threadbox',
+    title: 'Threadbox for Codex',
+    version: packageJson.version
+  })
   const codexHome = process.env.CODEX_HOME ?? join(app.getPath('home'), '.codex')
   const platformProtectedPaths =
     process.platform === 'win32'

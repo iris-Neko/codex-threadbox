@@ -5,23 +5,25 @@ on:
     tags:
       - 'v*'
 
-permissions:
-  contents: write
+env:
+  NODE_VERSION: 24.15.0
 
 jobs:
-  build:
-    name: Build ${{ matrix.name }}
+  desktop:
+    name: Desktop ${{ matrix.target }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: Windows x64
+          - target: windows-x64
             os: windows-latest
             args: --win --x64
-          - name: macOS x64 and arm64
+          - target: macos-x64-arm64
             os: macos-latest
             args: --mac --x64 --arm64
-          - name: Linux x64
+          - target: linux-x64
             os: ubuntu-latest
             args: --linux --x64
     runs-on: ${{ matrix.os }}
@@ -29,7 +31,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - run: npm ci
       - run: npm run verify
@@ -38,7 +40,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.name }}
+          name: desktop-${{ matrix.target }}
           if-no-files-found: error
           path: |
             dist/*.exe
@@ -47,9 +49,45 @@ jobs:
             dist/*.AppImage
             dist/*.deb
 
+  packages:
+    name: npm and VSIX packages
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - if: runner.os != 'Windows'
+        run: chmod +x tests/fixtures/bin/codex
+      - run: npm run test:cli
+      - run: npm run test:cli-package
+      - run: npm run test:integration
+      - if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:vscode
+      - if: runner.os == 'Linux'
+        run: npm pack --workspace=codex-threadbox --pack-destination dist
+      - if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: distribution-packages
+          if-no-files-found: error
+          path: |
+            dist/codex-threadbox-0.3.0.tgz
+            dist/threadbox-for-codex-0.3.0.vsix
+
   draft-release:
-    name: Create draft release
-    needs: build
+    name: Create draft GitHub Release
+    needs: [desktop, packages]
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -64,3 +102,44 @@ jobs:
           draft: true
           generate_release_notes: true
           files: release-artifacts/*
+
+  publish:
+    name: Publish npm and extension marketplaces
+    needs: [packages, draft-release]
+    permissions:
+      contents: read
+      id-token: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@v4
+        with:
+          name: distribution-packages
+          path: release-artifacts
+      - name: Publish npm package
+        run: npm publish release-artifacts/codex-threadbox-0.3.0.tgz --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish VS Code Marketplace extension
+        run: npx --yes @vscode/vsce@3.6.2 publish --packagePath release-artifacts/threadbox-for-codex-0.3.0.vsix --pat "$VSCE_PAT"
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      - name: Publish Open VSX extension
+        run: npx --yes ovsx@0.10.7 publish release-artifacts/threadbox-for-codex-0.3.0.vsix --pat "$OVSX_PAT"
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+
+  finalize-release:
+    name: Publish GitHub Release
+    needs: publish
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
+        env:
+          GH_TOKEN: ${{ github.token }}

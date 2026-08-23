@@ -1,16 +1,17 @@
 import type {
   BatchOperationResult,
   DeleteThreadsOptions,
+  DesktopRecentsCleanupResult,
   DesktopRecentsRepairResult,
+  DesktopRecentsStatus,
   ListThreadsResult,
   ThreadRecord,
   WorkingDirectoryCleanupResult
-} from '../shared/contracts'
-import type { Thread } from '../shared/protocol/generated/v2/Thread'
-import type { ThreadListResponse } from '../shared/protocol/generated/v2/ThreadListResponse'
-import type { ThreadSourceKind } from '../shared/protocol/generated/v2/ThreadSourceKind'
+} from '../../../src/shared/contracts'
+import type { Thread } from '../../../src/shared/protocol/generated/v2/Thread'
+import type { ThreadListResponse } from '../../../src/shared/protocol/generated/v2/ThreadListResponse'
+import type { ThreadSourceKind } from '../../../src/shared/protocol/generated/v2/ThreadSourceKind'
 import type { RpcClientLike } from './app-server-client'
-import type { DesktopRecentsRepairLike } from './desktop-recents-repair'
 import {
   containsPath,
   samePath,
@@ -47,6 +48,12 @@ interface ExtendedThreadListParams {
 }
 
 type BatchMethod = 'thread/delete' | 'thread/archive' | 'thread/unarchive'
+
+export interface DesktopRecentsRepairLike {
+  inspect(liveThreadIds: ReadonlySet<string>): Promise<DesktopRecentsStatus>
+  repair(liveThreadIds: ReadonlySet<string>): Promise<DesktopRecentsRepairResult>
+  removeThreadIds(threadIds: ReadonlySet<string>): Promise<DesktopRecentsCleanupResult>
+}
 
 function sourceLabel(source: Thread['source']): string {
   if (typeof source === 'string') return source

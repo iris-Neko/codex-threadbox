@@ -1,0 +1,16 @@
+{
+  "name": "@threadbox/ui",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./i18n": "./src/i18n.ts",
+    "./styles.css": "./src/styles-v2.css",
+    "./thread-utils": "./src/thread-utils.ts"
+  },
+  "peerDependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  }
+}

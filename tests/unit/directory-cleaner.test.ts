@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { parse, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { WorkingDirectoryCleaner } from '../../src/main/directory-cleaner'
+import { WorkingDirectoryCleaner } from '../../packages/core/src/directory-cleaner'
 
 const temporaryDirectories: string[] = []
 

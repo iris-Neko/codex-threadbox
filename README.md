@@ -1,12 +1,12 @@
 # Threadbox for Codex
 
-**A local, cross-platform desktop manager for Codex tasks.**
+**A local, cross-platform manager for Codex tasks on desktops, terminals, and remote servers.**
 
 [简体中文](README.zh-CN.md)
 
 ![Threadbox task list](docs/images/threadbox-main.png)
 
-Threadbox brings Codex CLI and desktop task history from every working directory into one searchable list. It uses the official [Codex App Server](https://learn.chatgpt.com/docs/app-server) for every task operation. An explicitly confirmed repair tool can remove orphaned rows from Codex desktop's derived Recents catalog after creating and verifying a backup; it never edits task state, JSONL rollouts, or project files.
+Threadbox brings Codex task history from every working directory into one searchable list. The Electron app, headless CLI, and VS Code extension share the same official [Codex App Server](https://learn.chatgpt.com/docs/app-server) integration. The desktop app also provides separately confirmed adapters for moving selected task directories to Trash and repairing Codex desktop's derived Recents catalog.
 
 > Threadbox for Codex is an independent community project. It is not affiliated with or endorsed by OpenAI.
 
@@ -27,10 +27,24 @@ Threadbox brings Codex CLI and desktop task history from every working directory
 
 Everything runs locally. Threadbox has no telemetry, does not call a model, and does not upload or retain conversation content.
 
+## Choose a frontend
+
+| Capability | Desktop | CLI | VS Code / Remote |
+| --- | --- | --- | --- |
+| List, search, group, archive, pin, and delete task records | Yes | Yes | Yes |
+| Manage the host used by Remote SSH, Dev Containers, or Codespaces | No | Yes | Yes |
+| Open a task working directory | Yes | No | Yes |
+| Move selected working directories to system Trash | Yes | No | No |
+| Repair Codex desktop's derived Recents catalog | Yes | No | No |
+
+The CLI and VS Code extension always preserve working directories. Unsupported actions are absent from their interfaces rather than exposed as hidden flags.
+
 ## Requirements
 
-- Windows 10/11, macOS, or a modern Linux desktop.
 - Codex CLI `0.149.0` or newer available on `PATH`.
+- Desktop: Windows 10/11, macOS, or a modern Linux desktop.
+- CLI: Node.js `22.13.0` or newer.
+- Extension: VS Code `1.96.0` or newer. Remote sessions require Codex on the remote extension host.
 
 ### Platform validation
 
@@ -48,7 +62,7 @@ npm install -g @openai/codex@latest
 
 You can also select a custom Codex executable in Threadbox settings or set `CODEX_BINARY`.
 
-## Install
+## Desktop install
 
 Download the package for your platform from [GitHub Releases](https://github.com/iris-Neko/codex-threadbox/releases).
 
@@ -58,11 +72,36 @@ Download the package for your platform from [GitHub Releases](https://github.com
 
 Every release includes `SHA256SUMS.txt`.
 
+## CLI install
+
+Run without installing:
+
+```bash
+npx codex-threadbox
+```
+
+Or install globally:
+
+```bash
+npm install -g codex-threadbox
+threadbox
+```
+
+Running `threadbox` in a TTY opens the interactive manager. Scriptable commands are `status`, `list`, `archive`, `unarchive`, `pin`, `unpin`, and `delete`. Mutations accept only explicit task IDs. Non-interactive deletion requires `--yes`; use `--json` for the stable `schemaVersion: 1` output contract.
+
+## VS Code install
+
+Install **Threadbox for Codex** from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=iris-neko.threadbox-for-codex), [Open VSX](https://open-vsx.org/extension/iris-neko/threadbox-for-codex), or the release VSIX. Run **Threadbox: Open Manager** from the Command Palette.
+
+The extension declares `extensionKind: ["workspace"]`. In Remote SSH, Dev Containers, and Codespaces, Codex CLI, `CODEX_HOME`, task data, and the App Server process all remain on the remote host. Configure `threadbox.codexBinary`, `threadbox.codexHome`, or `threadbox.language` as machine-scoped settings when needed. An untrusted workspace cannot start Codex or modify task metadata.
+
 ## Safety model
 
 Permanent deletion calls App Server `thread/delete`, which also deletes spawned descendants. Threadbox refreshes the inventory immediately before deletion, removes active or pinned tasks from the request, collapses selected descendants under selected parents, and executes root deletions sequentially so one failure does not stop the rest.
 
 Project files are kept by default. The deletion dialog lists the exact task `cwd` values shown in the table, not project/workspace group names. Only checked directories are moved to the operating system Trash, and only after the corresponding task deletion succeeds. Threadbox keeps filesystem roots, the user home and Codex data directories, system locations, its own application paths, and directories still referenced by remaining Codex tasks. Trash failures never trigger permanent filesystem deletion.
+
+The CLI and VS Code extension do not contain the Trash or Recents adapters. Their permanent-delete operation removes Codex task records and spawned descendants through App Server while preserving every working directory.
 
 Codex `0.149.0` does not yet expose pin metadata in its stable App Server schema. Threadbox keeps pin controls capability-gated and enables them only when the installed stable CLI advertises the required API. It never works around a missing task API by modifying Codex task state files.
 
@@ -85,12 +124,14 @@ Validation commands:
 npm run lint
 npm run typecheck
 npm test
+npm run test:cli
+npm run test:vscode
 npm run test:integration
 npm run test:e2e
 npm run package
 ```
 
-The integration test creates an isolated temporary `CODEX_HOME`. Unit and Electron tests use a fake stdio App Server. Tests never mutate real Codex tasks.
+Integration tests create isolated temporary `CODEX_HOME` directories. Unit, CLI, VS Code, and Electron tests use fake App Servers where mutations are exercised. Tests never mutate real Codex tasks.
 
 Regenerate protocol types from the pinned Codex development dependency:
 

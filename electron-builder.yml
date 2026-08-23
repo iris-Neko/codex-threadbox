@@ -10,8 +10,6 @@ extraResources:
   - from: resources/icon.png
     to: icon.png
 asar: true
-asarUnpack:
-  - node_modules/cross-spawn/**
 win:
   icon: resources/icon.png
   target:

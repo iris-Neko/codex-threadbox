@@ -4,7 +4,7 @@ import { isAbsolute, parse, relative, resolve } from 'node:path'
 import type {
   WorkingDirectoryCleanupResult,
   WorkingDirectoryIssue
-} from '../shared/contracts'
+} from '../../../src/shared/contracts'
 
 export interface WorkingDirectoryCleanerLike {
   cleanup(paths: string[]): Promise<WorkingDirectoryCleanupResult>

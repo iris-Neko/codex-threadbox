@@ -14,8 +14,11 @@ Include the affected version, operating system, reproduction steps, and impact. 
 
 - The renderer runs with context isolation, Node integration disabled, and Chromium sandboxing enabled.
 - IPC inputs are validated and constrained to known task IDs and working directories.
+- The VS Code Webview uses a strict nonce CSP, local bundled resources, a method allowlist, typed responses, timeouts, and per-method parameter validation.
+- Untrusted VS Code workspaces cannot start Codex, enumerate tasks, mutate task metadata, or open a task directory.
 - Codex commands are spawned with argument arrays rather than user-built shell strings.
 - Task mutations use official App Server methods.
 - Desktop Recents repair is restricted to fixed statements against orphaned local-host rows in the derived catalog, after an online backup and integrity check.
 - Optional project cleanup uses the operating system Trash after task deletion succeeds, with shared and protected path checks in the main process.
+- The CLI and VS Code extension never delete working directories and never access the desktop Recents catalog.
 - Threadbox has no telemetry and does not store conversation content.

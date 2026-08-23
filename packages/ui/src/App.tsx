@@ -24,8 +24,10 @@ import type {
   BatchOperationResult,
   DesktopRecentsStatus,
   EnvironmentStatus,
+  PlatformCapabilities,
+  ThreadboxApi,
   ThreadRecord
-} from '../../shared/contracts'
+} from '../../../src/shared/contracts'
 import { DeleteDialog } from './components/DeleteDialog'
 import { RecentsRepairDialog } from './components/RecentsRepairDialog'
 import { SettingsDialog } from './components/SettingsDialog'
@@ -81,11 +83,25 @@ function operationSummary(
   return details.join(' ')
 }
 
-export default function App(): React.JSX.Element {
+const DEFAULT_PLATFORM_CAPABILITIES: PlatformCapabilities = {
+  host: 'desktop',
+  desktopRecentsRepair: true,
+  directoryTrash: true,
+  chooseCliPath: true,
+  openWorkingDirectory: true,
+  currentWorkspaceDirectories: []
+}
+
+export interface ThreadboxAppProps {
+  api: ThreadboxApi
+}
+
+export default function App({ api }: ThreadboxAppProps): React.JSX.Element {
   const { t, i18n } = useTranslation()
   const booted = useRef(false)
   const [settings, setSettings] = useState<AppSettings>({ locale: 'en', customCliPath: null })
   const [environment, setEnvironment] = useState<EnvironmentStatus>(INITIAL_ENVIRONMENT)
+  const [platform, setPlatform] = useState<PlatformCapabilities>(DEFAULT_PLATFORM_CAPABILITIES)
   const [threads, setThreads] = useState<ThreadRecord[]>([])
   const [desktopRecents, setDesktopRecents] = useState<DesktopRecentsStatus>({
     state: 'unavailable',
@@ -111,7 +127,7 @@ export default function App(): React.JSX.Element {
     setLoading(true)
     setError(null)
     try {
-      const result = await window.threadbox.listThreads()
+      const result = await api.listThreads()
       setThreads(result.threads)
       setEnvironment(result.environment)
       setDesktopRecents(result.desktopRecents)
@@ -126,24 +142,28 @@ export default function App(): React.JSX.Element {
           ).roots
       )
     } catch (caught) {
-      const status = await window.threadbox.getEnvironmentStatus().catch(() => INITIAL_ENVIRONMENT)
+      const status = await api.getEnvironmentStatus().catch(() => INITIAL_ENVIRONMENT)
       setEnvironment(status)
       setError(caught instanceof Error ? caught.message : t('unknownError'))
     } finally {
       setLoading(false)
     }
-  }, [t])
+  }, [api, t])
 
   useEffect(() => {
     if (booted.current) return
     booted.current = true
     void (async () => {
-      const currentSettings = await window.threadbox.getSettings()
+      const [currentSettings, currentPlatform] = await Promise.all([
+        api.getSettings(),
+        api.getPlatformCapabilities()
+      ])
       setSettings(currentSettings)
+      setPlatform(currentPlatform)
       await i18n.changeLanguage(currentSettings.locale)
       await refresh()
     })()
-  }, [i18n, refresh])
+  }, [api, i18n, refresh])
 
   useEffect(() => {
     if (!notice) return
@@ -151,7 +171,15 @@ export default function App(): React.JSX.Element {
     return () => window.clearTimeout(timer)
   }, [notice])
 
-  const matchedThreads = useMemo(() => filterThreads(threads, filters), [threads, filters])
+  const matchedThreads = useMemo(
+    () => filterThreads(
+      threads,
+      filters,
+      Math.floor(Date.now() / 1000),
+      platform.currentWorkspaceDirectories
+    ),
+    [filters, platform.currentWorkspaceDirectories, threads]
+  )
   const treeRows = useMemo(
     () =>
       flattenThreadTree(
@@ -232,7 +260,7 @@ export default function App(): React.JSX.Element {
     setBusy(true)
     setError(null)
     try {
-      const result = await window.threadbox.repairDesktopRecents()
+      const result = await api.repairDesktopRecents()
       setDesktopRecents(result.status)
       setRecentsRepairOpen(false)
       setNotice(t('recentsRepairDone', { count: result.removed }))
@@ -284,7 +312,7 @@ export default function App(): React.JSX.Element {
   const saveSettings = async (next: AppSettings): Promise<void> => {
     setBusy(true)
     try {
-      const updated = await window.threadbox.updateSettings(next)
+      const updated = await api.updateSettings(next)
       setSettings(updated)
       await i18n.changeLanguage(updated.locale)
       setSettingsOpen(false)
@@ -416,6 +444,9 @@ export default function App(): React.JSX.Element {
               onChange={(event) => setFilter('workspace', event.target.value)}
             >
               <option value="all">{t('allWorkspaces')}</option>
+              {platform.currentWorkspaceDirectories.length > 0 && (
+                <option value="__current__">{t('currentWorkspace')}</option>
+              )}
               {workspaceGroups.map((group) => (
                 <option key={group.id} value={group.id}>
                   {group.kind === 'standalone'
@@ -468,7 +499,7 @@ export default function App(): React.JSX.Element {
             </div>
           )}
 
-          {desktopRecents.state === 'stale' && (
+          {platform.desktopRecentsRepair && desktopRecents.state === 'stale' && (
             <div className="process-warning process-warning--recents">
               <DatabaseZap size={15} aria-hidden="true" />
               <span>{t('recentsStale', { count: desktopRecents.staleCount })}</span>
@@ -516,7 +547,7 @@ export default function App(): React.JSX.Element {
                   className="button button--quiet"
                   type="button"
                   disabled={busy || archiveSelected.length === 0}
-                  onClick={() => void runOperation(() => window.threadbox.archiveThreads(archiveSelected))}
+                  onClick={() => void runOperation(() => api.archiveThreads(archiveSelected))}
                 >
                   <Archive size={15} aria-hidden="true" />
                   {t('archive')}
@@ -525,7 +556,7 @@ export default function App(): React.JSX.Element {
                   className="button button--quiet"
                   type="button"
                   disabled={busy || unarchiveSelected.length === 0}
-                  onClick={() => void runOperation(() => window.threadbox.unarchiveThreads(unarchiveSelected))}
+                  onClick={() => void runOperation(() => api.unarchiveThreads(unarchiveSelected))}
                 >
                   <ArchiveRestore size={15} aria-hidden="true" />
                   {t('unarchive')}
@@ -535,7 +566,7 @@ export default function App(): React.JSX.Element {
                   type="button"
                   title={!environment.capabilities.pinning ? t('pinningUnavailable') : undefined}
                   disabled={busy || !environment.capabilities.pinning || unpinnedSelected.length === 0}
-                  onClick={() => void runOperation(() => window.threadbox.setPinned(unpinnedSelected, true))}
+                  onClick={() => void runOperation(() => api.setPinned(unpinnedSelected, true))}
                 >
                   <Pin size={15} aria-hidden="true" />
                   {t('pin')}
@@ -545,7 +576,7 @@ export default function App(): React.JSX.Element {
                   type="button"
                   title={!environment.capabilities.pinning ? t('pinningUnavailable') : undefined}
                   disabled={busy || !environment.capabilities.pinning || pinnedSelected.length === 0}
-                  onClick={() => void runOperation(() => window.threadbox.setPinned(pinnedSelected, false))}
+                  onClick={() => void runOperation(() => api.setPinned(pinnedSelected, false))}
                 >
                   <PinOff size={15} aria-hidden="true" />
                   {t('unpin')}
@@ -605,21 +636,22 @@ export default function App(): React.JSX.Element {
             locale={settings.locale}
             allSelectableSelected={allSelectableSelected}
             someSelectableSelected={someSelectableSelected}
+            allowOpenDirectory={platform.openWorkingDirectory}
             onToggle={toggleThread}
             onToggleVisible={toggleVisible}
             onToggleExpanded={toggleExpanded}
             onToggleGroup={toggleGroup}
             onOpenDirectory={(path) => {
-              void window.threadbox.openWorkingDirectory(path).then((message) => message && setError(message))
+              void api.openWorkingDirectory(path).then((message) => message && setError(message))
             }}
             onCopyId={(id) => {
-              void window.threadbox.copyThreadId(id).then(() => setNotice(t('copied')))
+              void api.copyThreadId(id).then(() => setNotice(t('copied')))
             }}
             onArchive={(thread) =>
               void runOperation(() =>
                 thread.archived
-                  ? window.threadbox.unarchiveThreads([thread.id])
-                  : window.threadbox.archiveThreads([thread.id])
+                  ? api.unarchiveThreads([thread.id])
+                  : api.archiveThreads([thread.id])
               )
             }
             onDelete={(thread) => setDeleteIds([thread.id])}
@@ -651,7 +683,8 @@ export default function App(): React.JSX.Element {
           busy={busy}
           onClose={() => setSettingsOpen(false)}
           onSave={(next) => void saveSettings(next)}
-          onBrowse={() => window.threadbox.chooseCliPath()}
+          allowBrowse={platform.chooseCliPath}
+          onBrowse={() => api.chooseCliPath()}
         />
       )}
 
@@ -659,18 +692,19 @@ export default function App(): React.JSX.Element {
         <DeleteDialog
           threads={deleteThreads}
           externalProcesses={environment.externalCodexProcesses}
+          allowDirectoryTrash={platform.directoryTrash}
           busy={busy}
           onClose={() => setDeleteIds(null)}
           onConfirm={(ids, trashWorkingDirectories) =>
             void runOperation(
-              () => window.threadbox.deleteThreads(ids, { trashWorkingDirectories }),
+              () => api.deleteThreads(ids, { trashWorkingDirectories }),
               true
             )
           }
         />
       )}
 
-      {recentsRepairOpen && desktopRecents.state === 'stale' && (
+      {platform.desktopRecentsRepair && recentsRepairOpen && desktopRecents.state === 'stale' && (
         <RecentsRepairDialog
           status={desktopRecents}
           busy={busy}

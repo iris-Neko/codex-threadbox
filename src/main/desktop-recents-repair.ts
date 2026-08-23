@@ -8,6 +8,7 @@ import type {
   DesktopRecentsRepairResult,
   DesktopRecentsStatus
 } from '../shared/contracts'
+import type { DesktopRecentsRepairLike } from '@threadbox/core'
 
 interface CatalogRow {
   thread_id: string
@@ -28,12 +29,6 @@ interface StateThreadRow {
 }
 
 const MAX_REPORTED_ENTRIES = 200
-
-export interface DesktopRecentsRepairLike {
-  inspect(liveThreadIds: ReadonlySet<string>): Promise<DesktopRecentsStatus>
-  repair(liveThreadIds: ReadonlySet<string>): Promise<DesktopRecentsRepairResult>
-  removeThreadIds(threadIds: ReadonlySet<string>): Promise<DesktopRecentsCleanupResult>
-}
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)

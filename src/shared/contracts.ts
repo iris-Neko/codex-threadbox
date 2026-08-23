@@ -101,7 +101,17 @@ export interface AppSettings {
   customCliPath: string | null
 }
 
+export interface PlatformCapabilities {
+  host: 'desktop' | 'vscode'
+  desktopRecentsRepair: boolean
+  directoryTrash: boolean
+  chooseCliPath: boolean
+  openWorkingDirectory: boolean
+  currentWorkspaceDirectories: string[]
+}
+
 export interface ThreadboxApi {
+  getPlatformCapabilities(): Promise<PlatformCapabilities>
   getEnvironmentStatus(): Promise<EnvironmentStatus>
   listThreads(): Promise<ListThreadsResult>
   deleteThreads(ids: string[], options: DeleteThreadsOptions): Promise<BatchOperationResult>
@@ -117,6 +127,7 @@ export interface ThreadboxApi {
 }
 
 export const IPC_CHANNELS = {
+  platformCapabilities: 'threadbox:platform-capabilities',
   environment: 'threadbox:environment',
   listThreads: 'threadbox:list-threads',
   deleteThreads: 'threadbox:delete-threads',

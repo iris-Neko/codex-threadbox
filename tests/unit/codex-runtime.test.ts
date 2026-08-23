@@ -8,7 +8,7 @@ import {
   CodexRuntime,
   parseCodexVersion,
   resolveCodexCandidates
-} from '../../src/main/codex-runtime'
+} from '../../packages/core/src/codex-runtime'
 
 const temporaryDirectories: string[] = []
 const originalEnvironment = {

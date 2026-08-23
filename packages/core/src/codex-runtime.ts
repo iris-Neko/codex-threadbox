@@ -3,8 +3,7 @@ import type { ChildProcess, SpawnOptions } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { delimiter, extname, isAbsolute, join } from 'node:path'
 import semver from 'semver'
-import type { EnvironmentStatus } from '../shared/contracts'
-import type { SettingsStore } from './settings-store'
+import type { EnvironmentStatus } from '../../../src/shared/contracts'
 
 export const MINIMUM_CODEX_VERSION = '0.149.0'
 const PINNING_VERSION = '0.150.0'
@@ -34,10 +33,16 @@ function launch(command: string, args: string[], options: SpawnOptions = {}): Ch
   return spawn(command, args, options)
 }
 
-function capture(command: string, args: string[], timeoutMs = 8_000): Promise<CapturedProcess> {
+function capture(
+  command: string,
+  args: string[],
+  timeoutMs = 8_000,
+  env: NodeJS.ProcessEnv = process.env
+): Promise<CapturedProcess> {
   return new Promise((resolve, reject) => {
     const child = launch(command, args, {
       windowsHide: true,
+      env,
       stdio: ['ignore', 'pipe', 'pipe']
     })
     let stdout = ''
@@ -141,7 +146,10 @@ export class CodexRuntime implements CodexRuntimeLike {
   private cached: { at: number; probe: RuntimeProbe } | null = null
   private readonly ownedProcessIds = new Set<number>()
 
-  constructor(private readonly settings: Pick<SettingsStore, 'load'>) {}
+  constructor(
+    private readonly settings: { load(): Promise<{ customCliPath: string | null }> },
+    private readonly env: NodeJS.ProcessEnv = process.env
+  ) {}
 
   async probe(force = false): Promise<RuntimeProbe> {
     if (!force && this.cached && Date.now() - this.cached.at < PROBE_TTL_MS) {
@@ -149,8 +157,8 @@ export class CodexRuntime implements CodexRuntimeLike {
     }
 
     const configured = await this.settings.load()
-    const requestedCommand = configured.customCliPath ?? process.env.CODEX_BINARY?.trim() ?? 'codex'
-    const candidates = resolveCodexCandidates(requestedCommand)
+    const requestedCommand = configured.customCliPath ?? this.env.CODEX_BINARY?.trim() ?? 'codex'
+    const candidates = resolveCodexCandidates(requestedCommand, this.env)
     const externalCodexProcesses = await this.countExternalProcesses()
     let lastCommand = candidates[0] ?? requestedCommand
     let lastError: unknown = null
@@ -159,7 +167,7 @@ export class CodexRuntime implements CodexRuntimeLike {
     for (const command of candidates) {
       lastCommand = command
       try {
-        const result = await capture(command, ['--version'])
+        const result = await capture(command, ['--version'], 8_000, this.env)
         launchedCandidate = true
         const version = parseCodexVersion(`${result.stdout}\n${result.stderr}`)
         if (result.code === 0 && version) {
@@ -204,6 +212,7 @@ export class CodexRuntime implements CodexRuntimeLike {
   spawnAppServer(command: string): ChildProcess {
     const child = launch(command, ['app-server', '--stdio'], {
       windowsHide: true,
+      env: this.env,
       stdio: ['pipe', 'pipe', 'ignore']
     })
     if (child.pid) {
@@ -217,7 +226,7 @@ export class CodexRuntime implements CodexRuntimeLike {
     if (process.env.THREADBOX_TEST_DISABLE_PROCESS_SCAN === '1') return 0
     try {
       if (process.platform === 'win32') {
-        const result = await capture('tasklist.exe', ['/fo', 'csv', '/nh'])
+        const result = await capture('tasklist.exe', ['/fo', 'csv', '/nh'], 8_000, this.env)
         return result.stdout
           .split(/\r?\n/)
           .map((line) => line.match(/^"([^"]+)","(\d+)"/))
@@ -229,7 +238,7 @@ export class CodexRuntime implements CodexRuntimeLike {
           }).length
       }
 
-      const result = await capture('ps', ['-axo', 'pid=,comm=,args='])
+      const result = await capture('ps', ['-axo', 'pid=,comm=,args='], 8_000, this.env)
       return result.stdout
         .split(/\r?\n/)
         .map((line) => line.trim().match(/^(\d+)\s+(\S+)\s+(.*)$/))

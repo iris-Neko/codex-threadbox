@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { RecentsRepairDialog } from '../../src/renderer/src/components/RecentsRepairDialog'
-import '../../src/renderer/src/i18n'
+import { RecentsRepairDialog } from '../../packages/ui/src/components/RecentsRepairDialog'
+import '../../packages/ui/src/i18n'
 
 afterEach(cleanup)
 

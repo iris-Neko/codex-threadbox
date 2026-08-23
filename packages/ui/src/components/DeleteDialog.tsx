@@ -1,7 +1,7 @@
 import { AlertTriangle, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { ThreadRecord } from '../../../shared/contracts'
+import type { ThreadRecord } from '../../../../src/shared/contracts'
 import { deletableThreads } from '../thread-utils'
 import { Modal } from './Modal'
 
@@ -9,6 +9,7 @@ interface DeleteDialogProps {
   threads: ThreadRecord[]
   externalProcesses: number
   busy: boolean
+  allowDirectoryTrash: boolean
   onClose(): void
   onConfirm(ids: string[], trashWorkingDirectories: string[]): void
 }
@@ -17,6 +18,7 @@ export function DeleteDialog({
   threads,
   externalProcesses,
   busy,
+  allowDirectoryTrash,
   onClose,
   onConfirm
 }: DeleteDialogProps): React.JSX.Element {
@@ -76,7 +78,7 @@ export function DeleteDialog({
         </span>
         <p>{t('deleteBody')}</p>
       </div>
-      <fieldset className="directory-cleanup">
+      {allowDirectoryTrash && <fieldset className="directory-cleanup">
         <legend>{t('directoryCleanupTitle')}</legend>
         <p>{t('directoryCleanupHint')}</p>
         <div className="directory-cleanup__list">
@@ -97,7 +99,7 @@ export function DeleteDialog({
             {t('directoryCleanupSelected', { count: trashDirectories.size })}
           </p>
         )}
-      </fieldset>
+      </fieldset>}
       <dl className="impact-list">
         <div>
           <dt>{t('deleteEligible', { count: eligible.length })}</dt>

@@ -1,4 +1,4 @@
-import type { ThreadRecord } from '../../shared/contracts'
+import type { ThreadRecord } from '../../../src/shared/contracts'
 
 export type ArchiveFilter = 'all' | 'active' | 'archived'
 export type AgeFilter = 'all' | '7' | '30' | '90'
@@ -258,7 +258,8 @@ export function deselectThreadSubtrees(
 export function filterThreads(
   threads: ThreadRecord[],
   filters: ThreadFilters,
-  nowSeconds = Math.floor(Date.now() / 1000)
+  nowSeconds = Math.floor(Date.now() / 1000),
+  currentWorkspaceDirectories: string[] = []
 ): ThreadRecord[] {
   const query = filters.query.trim().toLocaleLowerCase()
   const ageSeconds = filters.age === 'all' ? null : Number(filters.age) * 86_400
@@ -272,7 +273,14 @@ export function filterThreads(
     if (filters.archive === 'archived' && !thread.archived) return false
     if (filters.source !== 'all' && thread.source !== filters.source) return false
     if (filters.directory !== 'all' && thread.cwd !== filters.directory) return false
-    if (filters.workspace !== 'all' && workspaceByThreadId.get(thread.id) !== filters.workspace) {
+    if (filters.workspace === '__current__') {
+      const cwd = directoryKey(thread.cwd)
+      const current = currentWorkspaceDirectories.some((directory) => {
+        const workspace = directoryKey(directory)
+        return cwd === workspace || cwd.startsWith(`${workspace}/`)
+      })
+      if (!current) return false
+    } else if (filters.workspace !== 'all' && workspaceByThreadId.get(thread.id) !== filters.workspace) {
       return false
     }
     if (ageSeconds !== null && nowSeconds - thread.updatedAt > ageSeconds) return false

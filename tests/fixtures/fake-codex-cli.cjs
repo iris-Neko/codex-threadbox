@@ -1,4 +1,5 @@
 const readline = require('node:readline')
+const { appendFileSync } = require('node:fs')
 
 if (process.argv.includes('--version')) {
   process.stdout.write('codex-cli 0.149.0\n')
@@ -117,6 +118,14 @@ function send(message) {
   process.stdout.write(`${JSON.stringify(message)}\n`)
 }
 
+function log(message) {
+  if (process.env.THREADBOX_FAKE_LOG) {
+    appendFileSync(process.env.THREADBOX_FAKE_LOG, `${JSON.stringify(message)}\n`)
+  }
+}
+
+log({ event: 'server-start', pid: process.pid })
+
 readline.createInterface({ input: process.stdin }).on('line', (line) => {
   let message
   try {
@@ -124,9 +133,11 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
   } catch {
     return
   }
+  log(message)
   if (message.method === 'initialize') {
     send({ id: message.id, result: { userAgent: 'fake-codex' } })
   } else if (message.method === 'thread/list') {
+    if (process.env.THREADBOX_FAKE_HANG === '1') return
     send({
       id: message.id,
       result: {
@@ -136,6 +147,10 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
       }
     })
   } else if (message.id !== undefined) {
+    if (message.params?.threadId === process.env.THREADBOX_FAKE_FAIL_ID) {
+      send({ id: message.id, error: { code: -32000, message: 'fake mutation failure' } })
+      return
+    }
     send({ id: message.id, result: {} })
   }
 })

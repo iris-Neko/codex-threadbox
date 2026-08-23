@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import type { RpcClientLike } from '../../src/main/app-server-client'
-import type { WorkingDirectoryCleanerLike } from '../../src/main/directory-cleaner'
-import { ThreadService } from '../../src/main/thread-service'
+import type { RpcClientLike } from '../../packages/core/src/app-server-client'
+import type { WorkingDirectoryCleanerLike } from '../../packages/core/src/directory-cleaner'
+import { ThreadService } from '../../packages/core/src/thread-service'
 import type { EnvironmentStatus } from '../../src/shared/contracts'
 import type { Thread } from '../../src/shared/protocol/generated/v2/Thread'
 

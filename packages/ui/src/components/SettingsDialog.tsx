@@ -1,13 +1,14 @@
 import { FolderSearch, RotateCcw } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { AppLocale, AppSettings, EnvironmentStatus } from '../../../shared/contracts'
+import type { AppLocale, AppSettings, EnvironmentStatus } from '../../../../src/shared/contracts'
 import { Modal } from './Modal'
 
 interface SettingsDialogProps {
   settings: AppSettings
   environment: EnvironmentStatus
   busy: boolean
+  allowBrowse: boolean
   onClose(): void
   onSave(settings: AppSettings): void
   onBrowse(): Promise<string | null>
@@ -17,6 +18,7 @@ export function SettingsDialog({
   settings,
   environment,
   busy,
+  allowBrowse,
   onClose,
   onSave,
   onBrowse
@@ -63,14 +65,14 @@ export function SettingsDialog({
               placeholder="codex"
               spellCheck={false}
             />
-            <button
+            {allowBrowse && <button
               className="button button--secondary button--icon-text"
               type="button"
               onClick={() => void onBrowse().then((path) => path && setCustomCliPath(path))}
             >
               <FolderSearch size={16} aria-hidden="true" />
               {t('browse')}
-            </button>
+            </button>}
             <button
               className="icon-button"
               type="button"
