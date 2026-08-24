@@ -2,7 +2,7 @@
   "name": "threadbox-for-codex",
   "displayName": "Threadbox for Codex",
   "description": "Manage Codex tasks locally, including on Remote SSH, Dev Containers, and Codespaces.",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "publisher": "irisNeko",
   "license": "MIT",
   "private": true,
@@ -49,6 +49,18 @@
         "title": "Refresh",
         "category": "Threadbox",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "threadbox.searchSidebar",
+        "title": "Search Tasks",
+        "category": "Threadbox",
+        "icon": "$(search)"
+      },
+      {
+        "command": "threadbox.clearSidebarSearch",
+        "title": "Clear Task Search",
+        "category": "Threadbox",
+        "icon": "$(clear-all)"
       },
       {
         "command": "threadbox.newProject",
@@ -134,14 +146,24 @@
           "group": "navigation@1"
         },
         {
-          "command": "threadbox.refreshSidebar",
+          "command": "threadbox.searchSidebar",
           "when": "view == threadbox.sidebar",
           "group": "navigation@2"
         },
         {
+          "command": "threadbox.clearSidebarSearch",
+          "when": "view == threadbox.sidebar && threadbox.searchActive",
+          "group": "navigation@3"
+        },
+        {
+          "command": "threadbox.refreshSidebar",
+          "when": "view == threadbox.sidebar",
+          "group": "navigation@4"
+        },
+        {
           "command": "threadbox.newProject",
           "when": "view == threadbox.sidebar",
-          "group": "navigation@3"
+          "group": "navigation@5"
         }
       ],
       "view/item/context": [

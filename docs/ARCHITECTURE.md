@@ -33,7 +33,7 @@ The CLI accepts task IDs only for mutations. It does not contain the desktop Rec
 
 ## VS Code host
 
-The extension declares `extensionKind: ["workspace"]`, so Remote SSH, Dev Containers, and Codespaces run the extension, Codex CLI, App Server, and `CODEX_HOME` on the remote host. It opens the shared UI in an editor Webview.
+The extension declares `extensionKind: ["workspace"]`, so Remote SSH, Dev Containers, and Codespaces run the extension, Codex CLI, App Server, and `CODEX_HOME` on the remote host. Its Activity Bar tree provides in-memory metadata search and manual project assignment; it opens the shared UI in an editor Webview for the full manager.
 
 The Webview has a strict nonce CSP, bundled local resources, no Node access, request IDs, timeouts, a fixed method allowlist, and per-method argument validation. The extension rechecks workspace trust before any Codex probe, task listing, mutation, or folder-open request. Machine-scoped settings configure the remote CLI path, Codex home, and language.
 

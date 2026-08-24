@@ -17,6 +17,8 @@ import { requireWorkspaceTrust } from './workspace-trust'
 const CONFIGURATION = 'threadbox'
 const COMMAND = 'threadbox.openManager'
 const REFRESH_SIDEBAR_COMMAND = 'threadbox.refreshSidebar'
+const SEARCH_SIDEBAR_COMMAND = 'threadbox.searchSidebar'
+const CLEAR_SEARCH_COMMAND = 'threadbox.clearSidebarSearch'
 const SIDEBAR_VIEW = 'threadbox.sidebar'
 const CODEX_EXTENSION_ID = 'openai.chatgpt'
 const SIDEBAR_COMMANDS = {
@@ -279,11 +281,15 @@ export interface ThreadboxExtensionApi {
 }
 
 export function activate(context: vscode.ExtensionContext): ThreadboxExtensionApi {
-  const version = String(context.extension.packageJSON.version ?? '0.4.0')
+  const version = String(context.extension.packageJSON.version ?? '0.4.1')
   const runtime = new RuntimeHost(version)
   const projects = new ProjectStore(join(context.globalStorageUri.fsPath, 'projects-v1.json'))
   const api = createApi(runtime, projects)
-  const sidebar = new ThreadboxSidebarProvider(api, SIDEBAR_COMMANDS.openInCodex, vscode.env.language)
+  const sidebar = new ThreadboxSidebarProvider(
+    api,
+    SIDEBAR_COMMANDS.openInCodex,
+    vscode.env.language
+  )
   const sidebarView = vscode.window.createTreeView(SIDEBAR_VIEW, {
     treeDataProvider: sidebar,
     dragAndDropController: sidebar,
@@ -297,6 +303,11 @@ export function activate(context: vscode.ExtensionContext): ThreadboxExtensionAp
       ? { value: summary.taskCount, tooltip: summary.tooltip }
       : undefined
   }))
+  context.subscriptions.push(sidebar.onDidChangeSearch((query) => {
+    sidebarView.description = query || undefined
+    void vscode.commands.executeCommand('setContext', 'threadbox.searchActive', query.length > 0)
+  }))
+  void vscode.commands.executeCommand('setContext', 'threadbox.searchActive', false)
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
     if (event.affectsConfiguration('threadbox.codexBinary') ||
       event.affectsConfiguration('threadbox.codexHome')) runtime.reset()
@@ -305,6 +316,10 @@ export function activate(context: vscode.ExtensionContext): ThreadboxExtensionAp
   context.subscriptions.push(vscode.commands.registerCommand(REFRESH_SIDEBAR_COMMAND, () => {
     sidebar.refresh()
   }))
+  context.subscriptions.push(
+    vscode.commands.registerCommand(SEARCH_SIDEBAR_COMMAND, () => sidebar.search()),
+    vscode.commands.registerCommand(CLEAR_SEARCH_COMMAND, () => sidebar.clearSearch())
+  )
   context.subscriptions.push(
     vscode.commands.registerCommand(SIDEBAR_COMMANDS.newProject, () => sidebar.createProject()),
     vscode.commands.registerCommand(SIDEBAR_COMMANDS.renameProject,

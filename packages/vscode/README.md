@@ -1,6 +1,6 @@
 # Threadbox for Codex
 
-Open the Threadbox icon in the Activity Bar to organize tasks into host-local projects. The sidebar supports project creation, drag-and-drop assignment, multi-select archive/pin/delete actions, working-directory access, and collapsible spawned tasks. Select **Open Threadbox Manager**, or run **Threadbox: Open Manager**, for search, filters, and batch operations.
+Open the Threadbox icon in the Activity Bar to organize tasks into host-local projects. The sidebar supports live metadata search, project creation, drag-and-drop assignment, creating a project while moving tasks, multi-select archive/pin/delete actions, working-directory access, and collapsible spawned tasks. Select **Open Threadbox Manager**, or run **Threadbox: Open Manager**, for the full table and advanced filters.
 
 The extension runs in the workspace extension host, so Remote SSH, Dev Containers, and Codespaces manage the remote host's Codex tasks. It does not read full transcripts, repair desktop Recents, delete working directories, call a model, upload data, or collect telemetry.
 

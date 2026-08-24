@@ -48,6 +48,8 @@ export async function run(): Promise<void> {
     assert(result.succeeded.length === 1, 'VS Code archive operation did not complete.')
     const commands = await vscode.commands.getCommands(true)
     assert(commands.includes('threadbox.refreshSidebar'), 'Threadbox sidebar refresh was not registered.')
+    assert(commands.includes('threadbox.searchSidebar'), 'Threadbox sidebar search was not registered.')
+    assert(commands.includes('threadbox.clearSidebarSearch'), 'Threadbox search reset was not registered.')
     assert(commands.includes('threadbox.newProject'), 'Threadbox project commands were not registered.')
     assert(commands.includes('threadbox.moveToProject'), 'Threadbox task move command was not registered.')
     assert(commands.includes('threadbox.openInCodex'), 'Threadbox Codex task command was not registered.')
