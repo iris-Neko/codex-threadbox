@@ -8,13 +8,16 @@ import type {
   ThreadRecord
 } from '../../../src/shared/contracts'
 import { groupThreads } from '../../core/src/thread-utils'
-import { collectThreadIds } from './sidebar-selection'
+import {
+  buildVisibleThreadHierarchy,
+  collectThreadIds,
+  type ThreadHierarchyNode
+} from './sidebar-selection'
 
 const SETTINGS_COMMAND = 'workbench.action.openSettings'
 const TREE_MIME = 'application/vnd.code.tree.threadbox.sidebar'
 
 interface SidebarLabels {
-  openManager: string
   settings: string
   ready: string
   projects: string
@@ -39,7 +42,7 @@ interface SidebarLabels {
 function labels(locale: string): SidebarLabels {
   if (locale.toLowerCase().startsWith('zh')) {
     return {
-      openManager: '打开 Threadbox 管理器', settings: '打开设置', ready: '就绪', projects: '项目',
+      settings: '打开设置', ready: '就绪', projects: '项目',
       unassigned: '未归属', archived: '已归档', workspaceTrust: '需要信任工作区才能读取 Codex 任务',
       unavailable: 'Codex CLI 不可用', newProject: '新建项目', projectName: '项目名称',
       renameProject: '重命名项目', deleteProject: '删除项目',
@@ -50,7 +53,7 @@ function labels(locale: string): SidebarLabels {
     }
   }
   return {
-    openManager: 'Open Threadbox Manager', settings: 'Open Settings', ready: 'Ready', projects: 'Projects',
+    settings: 'Open Settings', ready: 'Ready', projects: 'Projects',
     unassigned: 'Unassigned', archived: 'Archived', workspaceTrust: 'Trust this workspace to read Codex tasks',
     unavailable: 'Codex CLI unavailable', newProject: 'New project', projectName: 'Project name',
     renameProject: 'Rename project', deleteProject: 'Delete project',
@@ -116,7 +119,7 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
 
   constructor(
     private readonly api: ThreadboxApi,
-    private readonly openManagerCommand: string,
+    private readonly openThreadCommand: string,
     private readonly locale: string
   ) {}
 
@@ -243,7 +246,9 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
   private threadIds(items: readonly SidebarItem[]): string[] {
     return [...new Set(items.flatMap((item) => item.thread ? [item.thread.id] : []))]
   }
-  private command(title: string): vscode.Command { return { command: this.openManagerCommand, title } }
+  private threadCommand(thread: ThreadRecord): vscode.Command {
+    return { command: this.openThreadCommand, title: thread.title, arguments: [thread.id] }
+  }
   private settingsCommand(title: string): vscode.Command {
     return { command: SETTINGS_COMMAND, title, arguments: ['@ext:irisNeko.threadbox-for-codex'] }
   }
@@ -259,28 +264,20 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
   }
 
   private threadItems(threads: ThreadRecord[]): SidebarItem[] {
-    const byParent = new Map<string, ThreadRecord[]>()
-    const ids = new Set(threads.map((thread) => thread.id))
-    const roots: ThreadRecord[] = []
-    for (const thread of threads) {
-      if (thread.parentThreadId && ids.has(thread.parentThreadId)) {
-        const children = byParent.get(thread.parentThreadId) ?? []
-        children.push(thread); byParent.set(thread.parentThreadId, children)
-      } else roots.push(thread)
-    }
-    const visit = (thread: ThreadRecord): SidebarItem => {
-      const children = (byParent.get(thread.id) ?? []).map(visit)
+    const visit = (node: ThreadHierarchyNode): SidebarItem => {
+      const thread = node.thread
+      const children = node.children.map(visit)
       const archive = thread.archived ? 'archived' : 'active'
       const pin = thread.pinned ? 'pinned' : 'unpinned'
       return new SidebarItem(thread.title, {
         kind: 'thread', description: basename(thread.cwd),
         icon: thread.status === 'active' ? 'sync~spin' : thread.pinned ? 'pinned' : 'comment-discussion',
-        command: this.command(thread.title), tooltip: `${thread.title}\n${thread.cwd}`,
+        command: this.threadCommand(thread), tooltip: `${thread.title}\n${thread.cwd}`,
         children: children.length > 0 ? children : undefined,
         contextValue: `threadbox.thread.${archive}.${pin}`, thread
       })
     }
-    return roots.toSorted((left, right) => right.updatedAt - left.updatedAt).map(visit)
+    return buildVisibleThreadHierarchy(threads).map(visit)
   }
 
   private projectChildren(threads: ThreadRecord[], copy: SidebarLabels): SidebarItem[] {

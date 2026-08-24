@@ -18,6 +18,8 @@ const CONFIGURATION = 'threadbox'
 const COMMAND = 'threadbox.openManager'
 const REFRESH_SIDEBAR_COMMAND = 'threadbox.refreshSidebar'
 const SIDEBAR_VIEW = 'threadbox.sidebar'
+const CODEX_EXTENSION_ID = 'openai.chatgpt'
+const CODEX_CONVERSATION_EDITOR = 'chatgpt.conversationEditor'
 const SIDEBAR_COMMANDS = {
   newProject: 'threadbox.newProject',
   renameProject: 'threadbox.renameProject',
@@ -29,12 +31,31 @@ const SIDEBAR_COMMANDS = {
   unpin: 'threadbox.unpin',
   delete: 'threadbox.delete',
   copyId: 'threadbox.copyId',
-  openDirectory: 'threadbox.openDirectory'
+  openDirectory: 'threadbox.openDirectory',
+  openInCodex: 'threadbox.openInCodex'
 } as const
 
 function selectedItems(primary?: SidebarItem, selection?: SidebarItem[]): SidebarItem[] {
   if (selection && selection.length > 0) return selection
   return primary ? [primary] : []
+}
+
+async function openThreadInCodex(threadId: string): Promise<void> {
+  const extension = vscode.extensions.getExtension(CODEX_EXTENSION_ID)
+  if (!extension) throw new Error('The Codex extension is not installed on this extension host.')
+  const customEditors = (extension.packageJSON as {
+    contributes?: { customEditors?: Array<{ viewType?: unknown }> }
+  }).contributes?.customEditors
+  if (!customEditors?.some((editor) => editor.viewType === CODEX_CONVERSATION_EDITOR)) {
+    await vscode.commands.executeCommand('chatgpt.openSidebar')
+    throw new Error('This Codex extension version cannot open a task by ID.')
+  }
+  const resource = vscode.Uri.from({
+    scheme: 'openai-codex',
+    authority: 'route',
+    path: `/local/${threadId}`
+  })
+  await vscode.commands.executeCommand('vscode.openWith', resource, CODEX_CONVERSATION_EDITOR)
 }
 
 function configuredString(name: string): string | null {
@@ -263,7 +284,7 @@ export function activate(context: vscode.ExtensionContext): ThreadboxExtensionAp
   const runtime = new RuntimeHost(version)
   const projects = new ProjectStore(join(context.globalStorageUri.fsPath, 'projects-v1.json'))
   const api = createApi(runtime, projects)
-  const sidebar = new ThreadboxSidebarProvider(api, COMMAND, vscode.env.language)
+  const sidebar = new ThreadboxSidebarProvider(api, SIDEBAR_COMMANDS.openInCodex, vscode.env.language)
   const sidebarView = vscode.window.createTreeView(SIDEBAR_VIEW, {
     treeDataProvider: sidebar,
     dragAndDropController: sidebar,
@@ -312,7 +333,14 @@ export function activate(context: vscode.ExtensionContext): ThreadboxExtensionAp
       (item?: SidebarItem, selection?: SidebarItem[]) =>
         sidebar.copyIds(selectedItems(item, selection))),
     vscode.commands.registerCommand(SIDEBAR_COMMANDS.openDirectory,
-      (item?: SidebarItem) => sidebar.openDirectory(item))
+      (item?: SidebarItem) => sidebar.openDirectory(item)),
+    vscode.commands.registerCommand(SIDEBAR_COMMANDS.openInCodex, async (threadId?: unknown) => {
+      if (typeof threadId !== 'string' || threadId.length === 0) return
+      try { await openThreadInCodex(threadId) }
+      catch (error) {
+        await vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error))
+      }
+    })
   )
   context.subscriptions.push(vscode.commands.registerCommand(COMMAND, () => {
     if (panel) {

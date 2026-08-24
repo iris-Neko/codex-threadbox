@@ -50,6 +50,7 @@ export async function run(): Promise<void> {
     assert(commands.includes('threadbox.refreshSidebar'), 'Threadbox sidebar refresh was not registered.')
     assert(commands.includes('threadbox.newProject'), 'Threadbox project commands were not registered.')
     assert(commands.includes('threadbox.moveToProject'), 'Threadbox task move command was not registered.')
+    assert(commands.includes('threadbox.openInCodex'), 'Threadbox Codex task command was not registered.')
     await vscode.commands.executeCommand('threadbox.refreshSidebar')
     await vscode.commands.executeCommand('threadbox.openManager')
   } finally {

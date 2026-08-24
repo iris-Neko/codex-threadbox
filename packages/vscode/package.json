@@ -59,7 +59,8 @@
       {
         "command": "threadbox.renameProject",
         "title": "Rename Project",
-        "category": "Threadbox"
+        "category": "Threadbox",
+        "icon": "$(edit)"
       },
       {
         "command": "threadbox.deleteProject",

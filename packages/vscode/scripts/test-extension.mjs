@@ -10,6 +10,7 @@ const workspace = await mkdtemp(join(tmpdir(), 'threadbox-vscode-workspace-'))
 const installation = await mkdtemp(join(tmpdir(), 'threadbox-vscode-installation-'))
 const extensionsDirectory = join(installation, 'extensions')
 const userData = join(installation, 'user-data')
+const developmentUserData = join(installation, 'development-user-data')
 const fakeCli = resolve(
   packageRoot,
   '../../tests/fixtures/bin',
@@ -30,7 +31,8 @@ try {
     vscodeExecutablePath,
     extensionDevelopmentPath: packageRoot,
     extensionTestsPath: resolve(packageRoot, 'test-dist/index.cjs'),
-    launchArgs: [workspace, '--disable-workspace-trust', '--skip-welcome', '--skip-release-notes']
+    launchArgs: [workspace, '--user-data-dir', developmentUserData,
+      '--disable-workspace-trust', '--skip-welcome', '--skip-release-notes']
   })
 
   const installed = spawnSync(vscodeCliPath, [

@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname } from 'node:path'
 import type { ProjectRecord, ProjectSnapshot, ThreadRecord } from '../../../src/shared/contracts'
 
 const SCHEMA_VERSION = 1
 const MAX_PROJECT_NAME = 80
+const REPLACE_RETRY_CODES = new Set(['EACCES', 'EBUSY', 'EPERM'])
 
 interface StoredProject {
   id: string
@@ -21,6 +22,19 @@ interface ProjectFile {
 
 function emptyFile(): ProjectFile {
   return { schemaVersion: SCHEMA_VERSION, projects: [], assignments: {} }
+}
+
+async function replaceFile(temporaryPath: string, filePath: string): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rename(temporaryPath, filePath)
+      return
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (attempt >= 4 || !code || !REPLACE_RETRY_CODES.has(code)) throw error
+      await new Promise((resolve) => setTimeout(resolve, 20 * 2 ** attempt))
+    }
+  }
 }
 
 function normalizedName(name: string): string {
@@ -208,7 +222,11 @@ export class ProjectStore {
       await mkdir(dirname(this.filePath), { recursive: true })
       const temporaryPath = `${this.filePath}.${process.pid}.${randomUUID()}.tmp`
       await writeFile(temporaryPath, serialized, 'utf8')
-      await rename(temporaryPath, this.filePath)
+      try { await replaceFile(temporaryPath, this.filePath) }
+      catch (error) {
+        await rm(temporaryPath, { force: true }).catch(() => undefined)
+        throw error
+      }
       this.data = data
     })
     this.writeQueue = write.catch(() => undefined)
