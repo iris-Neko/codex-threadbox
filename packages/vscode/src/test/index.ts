@@ -19,7 +19,7 @@ export async function run(): Promise<void> {
     await configuration.update('language', 'en', vscode.ConfigurationTarget.Global)
 
     const extension = vscode.extensions.getExtension<ThreadboxExtensionApi>(
-      'irisNeko.threadbox-for-codex'
+      'irisNeko.codex-threadbox-vscode'
     )
     assert(extension, 'Threadbox extension was not discovered.')
     const manifest = extension.packageJSON as {

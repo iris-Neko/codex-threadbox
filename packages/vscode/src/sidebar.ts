@@ -348,7 +348,7 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
     return { command: this.openThreadCommand, title: thread.title, arguments: [thread.id] }
   }
   private settingsCommand(title: string): vscode.Command {
-    return { command: SETTINGS_COMMAND, title, arguments: ['@ext:irisNeko.threadbox-for-codex'] }
+    return { command: SETTINGS_COMMAND, title, arguments: ['@ext:irisNeko.codex-threadbox-vscode'] }
   }
 
   private environmentItems(status: EnvironmentStatus, copy: SidebarLabels): SidebarItem[] {

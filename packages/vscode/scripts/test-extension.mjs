@@ -48,7 +48,7 @@ try {
     '--extensions-dir', extensionsDirectory,
     '--user-data-dir', userData
   ], { encoding: 'utf8', shell: process.platform === 'win32', timeout: 60_000 })
-  if (listed.status !== 0 || !listed.stdout.toLowerCase().includes('irisneko.threadbox-for-codex')) {
+  if (listed.status !== 0 || !listed.stdout.toLowerCase().includes('irisneko.codex-threadbox-vscode')) {
     throw new Error(`Installed VSIX was not listed:\n${listed.stdout}\n${listed.stderr}`)
   }
 

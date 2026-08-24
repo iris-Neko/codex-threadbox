@@ -86,7 +86,7 @@ jobs:
         if: env.VSCE_PAT == ''
         run: |
           VERSION=$(node -p "require('./packages/vscode/package.json').version")
-          npx --yes @vscode/vsce@3.6.2 show irisNeko.threadbox-for-codex --json > marketplace.json
+          npx --yes @vscode/vsce@3.6.2 show irisNeko.codex-threadbox-vscode --json > marketplace.json
           node -e "const e=require('./marketplace.json');if(!e.versions?.some(v=>v.version===process.argv[1]))process.exit(1)" "$VERSION"
       - name: Require Open VSX token
         run: test -n "$OVSX_PAT"
