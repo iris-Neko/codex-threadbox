@@ -101,7 +101,7 @@ jobs:
           name: cli-package
           path: release-artifacts
       - name: Publish npm package
-        run: npm publish "$(find release-artifacts -maxdepth 1 -name '*.tgz' -print -quit)" --access public --provenance
+        run: npm publish "$PWD/$(find release-artifacts -maxdepth 1 -name '*.tgz' -print -quit)" --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Verify published package
