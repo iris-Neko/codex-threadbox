@@ -15,6 +15,7 @@ Threadbox brings Codex task history from every working directory into one search
 - List active and archived tasks across all working directories.
 - Search titles, previews, paths, sources, and task IDs.
 - Group desktop chats by Project, VS Code and CLI chats by working directory, and projectless desktop chats as independent tasks.
+- Organize VS Code and remote-host tasks into Threadbox projects from the Activity Bar, including drag-and-drop and multi-select actions.
 - Switch between grouped and flat views, and filter by project/workspace, archive state, source, directory, or recent activity.
 - Archive, unarchive, and permanently delete one or many tasks.
 - Optionally move selected working directories to the system Trash while keeping other project files.
@@ -33,6 +34,7 @@ Everything runs locally. Threadbox has no telemetry, does not call a model, and 
 | --- | --- | --- | --- |
 | List, search, group, archive, pin, and delete task records | Yes | Yes | Yes |
 | Manage the host used by Remote SSH, Dev Containers, or Codespaces | No | Yes | Yes |
+| Create host-local task projects | No | No | Yes |
 | Open a task working directory | Yes | No | Yes |
 | Move selected working directories to system Trash | Yes | No | No |
 | Repair Codex desktop's derived Recents catalog | Yes | No | No |
@@ -91,9 +93,11 @@ Running `threadbox` in a TTY opens the interactive manager. Scriptable commands 
 
 ## VS Code install
 
-Install **Threadbox for Codex** from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=irisNeko.threadbox-for-codex), [Open VSX](https://open-vsx.org/extension/irisNeko/threadbox-for-codex), or the release VSIX. Run **Threadbox: Open Manager** from the Command Palette.
+Install **Threadbox for Codex** from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=irisNeko.threadbox-for-codex), [Open VSX](https://open-vsx.org/extension/irisNeko/threadbox-for-codex), or the release VSIX. Open the Threadbox Activity Bar view for the project tree, or run **Threadbox: Open Manager** for the full manager.
 
 The extension declares `extensionKind: ["workspace"]`. In Remote SSH, Dev Containers, and Codespaces, Codex CLI, `CODEX_HOME`, task data, and the App Server process all remain on the remote host. Configure `threadbox.codexBinary`, `threadbox.codexHome`, or `threadbox.language` as machine-scoped settings when needed. An untrusted workspace cannot start Codex or modify task metadata.
+
+Threadbox project names and root-task assignments are stored in that extension host's VS Code global storage. They do not modify Codex databases or official project assignments and do not automatically sync between remote hosts.
 
 ## Safety model
 

@@ -1,10 +1,10 @@
-import type { ThreadRecord } from '../../../src/shared/contracts'
+import type { ProjectRecord, ProjectSnapshot, ThreadRecord } from '../../../src/shared/contracts'
 
 export type ArchiveFilter = 'all' | 'active' | 'archived'
 export type AgeFilter = 'all' | '7' | '30' | '90'
 export type SortMode = 'updated-desc' | 'updated-asc' | 'created-desc' | 'title-asc'
-export type ThreadViewMode = 'grouped' | 'flat'
-export type ThreadGroupKind = 'desktopProject' | 'localWorkspace' | 'standalone'
+export type ThreadViewMode = 'projects' | 'directories' | 'flat'
+export type ThreadGroupKind = 'threadboxProject' | 'desktopProject' | 'localWorkspace' | 'standalone'
 
 export interface ThreadFilters {
   query: string
@@ -34,6 +34,7 @@ export interface ThreadGroup {
   id: string
   kind: ThreadGroupKind
   projectId: string | null
+  project: ProjectRecord | null
   name: string
   directories: string[]
   sources: string[]
@@ -67,7 +68,7 @@ function directoryKey(path: string): string {
   return windowsStyle ? normalized.toLocaleLowerCase() : normalized
 }
 
-function owningThread(thread: ThreadRecord, byId: Map<string, ThreadRecord>): ThreadRecord {
+export function owningThread(thread: ThreadRecord, byId: Map<string, ThreadRecord>): ThreadRecord {
   let owner = thread
   const visited = new Set<string>([thread.id])
   while (owner.parentThreadId && !visited.has(owner.parentThreadId)) {
@@ -81,35 +82,84 @@ function owningThread(thread: ThreadRecord, byId: Map<string, ThreadRecord>): Th
 
 function groupIdentity(
   thread: ThreadRecord,
-  byId: Map<string, ThreadRecord>
-): { id: string; kind: ThreadGroupKind; projectId: string | null; directory: string } {
+  byId: Map<string, ThreadRecord>,
+  projects: ProjectSnapshot | null,
+  mode: Exclude<ThreadViewMode, 'flat'>
+): {
+  id: string
+  kind: ThreadGroupKind
+  projectId: string | null
+  project: ProjectRecord | null
+  directory: string
+} {
   const owner = owningThread(thread, byId)
+  if (mode === 'directories') {
+    return {
+      id: `workspace:${directoryKey(owner.cwd)}`,
+      kind: 'localWorkspace',
+      projectId: null,
+      project: null,
+      directory: owner.cwd
+    }
+  }
+  const assignedProjectId = projects?.assignments[owner.id]
+  const assignedProject = assignedProjectId
+    ? projects?.projects.find((project) => project.kind === 'threadbox' && project.id === assignedProjectId)
+    : null
+  if (assignedProject) {
+    return {
+      id: `threadbox-project:${assignedProject.id}`,
+      kind: 'threadboxProject',
+      projectId: assignedProject.id,
+      project: assignedProject,
+      directory: owner.cwd
+    }
+  }
   const projectId = thread.projectId ?? owner.projectId
   if (projectId) {
-    return { id: `project:${projectId}`, kind: 'desktopProject', projectId, directory: owner.cwd }
+    const officialId = `official:${projectId}`
+    const project = projects?.projects.find((item) => item.id === officialId) ?? null
+    return {
+      id: `project:${projectId}`,
+      kind: 'desktopProject',
+      projectId: officialId,
+      project,
+      directory: owner.cwd
+    }
   }
-  if (owner.source === 'appServer') {
-    return { id: 'standalone', kind: 'standalone', projectId: null, directory: owner.cwd }
+  if (owner.source === 'appServer' && projects === null) {
+    return {
+      id: 'standalone',
+      kind: 'standalone',
+      projectId: null,
+      project: null,
+      directory: owner.cwd
+    }
   }
   return {
     id: `workspace:${directoryKey(owner.cwd)}`,
     kind: 'localWorkspace',
     projectId: null,
+    project: null,
     directory: owner.cwd
   }
 }
 
-export function groupThreads(threads: ThreadRecord[]): ThreadGroup[] {
+export function groupThreads(
+  threads: ThreadRecord[],
+  projects: ProjectSnapshot | null = null,
+  mode: Exclude<ThreadViewMode, 'flat'> = 'projects'
+): ThreadGroup[] {
   const byId = new Map(threads.map((thread) => [thread.id, thread]))
   const groups = new Map<string, ThreadGroup>()
 
   for (const thread of threads) {
-    const { directory, ...identity } = groupIdentity(thread, byId)
+    const { directory, ...identity } = groupIdentity(thread, byId, projects, mode)
     let group = groups.get(identity.id)
     if (!group) {
       group = {
         ...identity,
-        name: identity.kind === 'standalone' ? '' : directoryName(directory),
+        name: identity.project?.name ?? (identity.kind === 'standalone' ? '' : directoryName(directory)),
         directories: [],
         sources: [],
         threads: []
@@ -126,15 +176,34 @@ export function groupThreads(threads: ThreadRecord[]): ThreadGroup[] {
     if (!thread.internal && !group.sources.includes(thread.source)) group.sources.push(thread.source)
   }
 
+  if (mode === 'projects' && projects) {
+    for (const project of projects.projects.filter((item) => item.kind === 'threadbox')) {
+      const id = `threadbox-project:${project.id}`
+      if (groups.has(id)) continue
+      groups.set(id, {
+        id,
+        kind: 'threadboxProject',
+        projectId: project.id,
+        project,
+        name: project.name,
+        directories: [],
+        sources: [],
+        threads: []
+      })
+    }
+  }
+
   return [...groups.values()]
 }
 
 export function groupThreadRows(
   allThreads: ThreadRecord[],
-  rows: ThreadTreeRow[]
+  rows: ThreadTreeRow[],
+  projects: ProjectSnapshot | null = null,
+  mode: Exclude<ThreadViewMode, 'flat'> = 'projects'
 ): ThreadRowGroup[] {
   const groupByThreadId = new Map<string, ThreadGroup>()
-  const groups = groupThreads(allThreads)
+  const groups = groupThreads(allThreads, projects, mode)
   for (const group of groups) {
     for (const thread of group.threads) groupByThreadId.set(thread.id, group)
   }
@@ -150,12 +219,12 @@ export function groupThreadRows(
 
   return groups.flatMap((group) => {
     const groupedRows = rowsByGroup.get(group.id)
-    if (!groupedRows) return []
+    if (!groupedRows && (group.kind !== 'threadboxProject' || group.threads.length > 0)) return []
     return [{
       ...group,
-      rows: groupedRows,
-      taskCount: groupedRows.filter((row) => row.matchesFilter && !row.thread.internal).length,
-      spawnedCount: groupedRows.filter((row) => row.matchesFilter && row.thread.internal).length
+      rows: groupedRows ?? [],
+      taskCount: (groupedRows ?? []).filter((row) => row.matchesFilter && !row.thread.internal).length,
+      spawnedCount: (groupedRows ?? []).filter((row) => row.matchesFilter && row.thread.internal).length
     }]
   })
 }
@@ -259,13 +328,20 @@ export function filterThreads(
   threads: ThreadRecord[],
   filters: ThreadFilters,
   nowSeconds = Math.floor(Date.now() / 1000),
-  currentWorkspaceDirectories: string[] = []
+  currentWorkspaceDirectories: string[] = [],
+  projects: ProjectSnapshot | null = null,
+  groupMode: Exclude<ThreadViewMode, 'flat'> = 'projects'
 ): ThreadRecord[] {
   const query = filters.query.trim().toLocaleLowerCase()
   const ageSeconds = filters.age === 'all' ? null : Number(filters.age) * 86_400
   const workspaceByThreadId = new Map<string, string>()
-  for (const group of groupThreads(threads)) {
-    for (const thread of group.threads) workspaceByThreadId.set(thread.id, group.id)
+  const groupNameByThreadId = new Map<string, string>()
+  const groups = groupThreads(threads, projects, groupMode)
+  for (const group of groups) {
+    for (const thread of group.threads) {
+      workspaceByThreadId.set(thread.id, group.id)
+      groupNameByThreadId.set(thread.id, group.name)
+    }
   }
 
   const filtered = threads.filter((thread) => {
@@ -286,7 +362,8 @@ export function filterThreads(
     if (ageSeconds !== null && nowSeconds - thread.updatedAt > ageSeconds) return false
     if (!query) return true
 
-    return [thread.title, thread.preview, thread.cwd, thread.source, thread.id, thread.projectId ?? '']
+    return [thread.title, thread.preview, thread.cwd, thread.source, thread.id,
+      thread.projectId ?? '', groupNameByThreadId.get(thread.id) ?? '']
       .join('\n')
       .toLocaleLowerCase()
       .includes(query)

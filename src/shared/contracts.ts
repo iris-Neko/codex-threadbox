@@ -101,8 +101,26 @@ export interface AppSettings {
   customCliPath: string | null
 }
 
+export type ProjectKind = 'threadbox' | 'official'
+
+export interface ProjectRecord {
+  id: string
+  name: string
+  kind: ProjectKind
+  readOnly: boolean
+  createdAt: number | null
+  updatedAt: number | null
+}
+
+export interface ProjectSnapshot {
+  projects: ProjectRecord[]
+  assignments: Record<string, string>
+  refreshedAt: number
+}
+
 export interface PlatformCapabilities {
   host: 'desktop' | 'vscode'
+  projectManagement: boolean
   desktopRecentsRepair: boolean
   directoryTrash: boolean
   chooseCliPath: boolean
@@ -119,6 +137,11 @@ export interface ThreadboxApi {
   archiveThreads(ids: string[]): Promise<BatchOperationResult>
   unarchiveThreads(ids: string[]): Promise<BatchOperationResult>
   setPinned(ids: string[], pinned: boolean): Promise<BatchOperationResult>
+  listProjects(): Promise<ProjectSnapshot>
+  createProject(name: string): Promise<ProjectSnapshot>
+  renameProject(id: string, name: string): Promise<ProjectSnapshot>
+  deleteProject(id: string): Promise<ProjectSnapshot>
+  assignThreads(ids: string[], projectId: string | null): Promise<ProjectSnapshot>
   openWorkingDirectory(path: string): Promise<string | null>
   copyThreadId(id: string): Promise<void>
   chooseCliPath(): Promise<string | null>
@@ -135,6 +158,11 @@ export const IPC_CHANNELS = {
   archiveThreads: 'threadbox:archive-threads',
   unarchiveThreads: 'threadbox:unarchive-threads',
   setPinned: 'threadbox:set-pinned',
+  listProjects: 'threadbox:list-projects',
+  createProject: 'threadbox:create-project',
+  renameProject: 'threadbox:rename-project',
+  deleteProject: 'threadbox:delete-project',
+  assignThreads: 'threadbox:assign-threads',
   openWorkingDirectory: 'threadbox:open-working-directory',
   copyThreadId: 'threadbox:copy-thread-id',
   chooseCliPath: 'threadbox:choose-cli-path',

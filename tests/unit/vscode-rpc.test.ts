@@ -12,6 +12,13 @@ describe('VS Code Webview RPC validation', () => {
       method: 'deleteThreads',
       args: [['thread-1'], { trashWorkingDirectories: [] }]
     })).toMatchObject({ method: 'deleteThreads' })
+    expect(parseRpcRequest({
+      kind: 'threadbox.request', id: 'request-2', method: 'assignThreads',
+      args: [['thread-1'], 'threadbox:project-1']
+    })).toMatchObject({ method: 'assignThreads' })
+    expect(parseRpcRequest({
+      kind: 'threadbox.request', id: 'request-3', method: 'createProject', args: ['Focus']
+    })).toMatchObject({ method: 'createProject' })
   })
 
   it('rejects unknown methods and host-only directory deletion', () => {
@@ -32,6 +39,12 @@ describe('VS Code Webview RPC validation', () => {
       id: '3',
       method: 'updateSettings',
       args: [{ locale: 'fr', unexpected: true }]
+    })).toBeNull()
+    expect(parseRpcRequest({
+      kind: 'threadbox.request', id: '5', method: 'createProject', args: [' '.repeat(10)]
+    })).toBeNull()
+    expect(parseRpcRequest({
+      kind: 'threadbox.request', id: '6', method: 'assignThreads', args: [['thread-1'], 42]
     })).toBeNull()
     expect(parseRpcRequest({
       kind: 'threadbox.request',

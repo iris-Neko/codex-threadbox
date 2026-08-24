@@ -26,6 +26,11 @@ const METHODS = new Set<RpcMethod>([
   'archiveThreads',
   'unarchiveThreads',
   'setPinned',
+  'listProjects',
+  'createProject',
+  'renameProject',
+  'deleteProject',
+  'assignThreads',
   'openWorkingDirectory',
   'copyThreadId',
   'chooseCliPath',
@@ -48,10 +53,24 @@ function isIds(value: unknown): value is string[] {
 
 function validArgs(method: RpcMethod, args: unknown[]): boolean {
   if (['getPlatformCapabilities', 'getEnvironmentStatus', 'listThreads', 'repairDesktopRecents',
-    'chooseCliPath', 'getSettings'].includes(method)) return args.length === 0
+    'chooseCliPath', 'getSettings', 'listProjects'].includes(method)) return args.length === 0
   if (['archiveThreads', 'unarchiveThreads'].includes(method)) return args.length === 1 && isIds(args[0])
   if (method === 'setPinned') {
     return args.length === 2 && isIds(args[0]) && typeof args[1] === 'boolean'
+  }
+  if (method === 'createProject') {
+    return args.length === 1 && isString(args[0], 80) && args[0].trim().length > 0
+  }
+  if (method === 'renameProject') {
+    return args.length === 2 && isString(args[0], 128) && isString(args[1], 80) &&
+      args[1].trim().length > 0
+  }
+  if (method === 'deleteProject') {
+    return args.length === 1 && isString(args[0], 128)
+  }
+  if (method === 'assignThreads') {
+    return args.length === 2 && isIds(args[0]) &&
+      (args[1] === null || isString(args[1], 128))
   }
   if (method === 'deleteThreads') {
     return args.length === 2 && isIds(args[0]) && isObject(args[1]) &&

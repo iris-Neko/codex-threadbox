@@ -10,6 +10,12 @@ const api: ThreadboxApi = {
   archiveThreads: (ids) => ipcRenderer.invoke(IPC_CHANNELS.archiveThreads, ids),
   unarchiveThreads: (ids) => ipcRenderer.invoke(IPC_CHANNELS.unarchiveThreads, ids),
   setPinned: (ids, pinned) => ipcRenderer.invoke(IPC_CHANNELS.setPinned, ids, pinned),
+  listProjects: () => ipcRenderer.invoke(IPC_CHANNELS.listProjects),
+  createProject: (name) => ipcRenderer.invoke(IPC_CHANNELS.createProject, name),
+  renameProject: (id, name) => ipcRenderer.invoke(IPC_CHANNELS.renameProject, id, name),
+  deleteProject: (id) => ipcRenderer.invoke(IPC_CHANNELS.deleteProject, id),
+  assignThreads: (ids, projectId) =>
+    ipcRenderer.invoke(IPC_CHANNELS.assignThreads, ids, projectId),
   openWorkingDirectory: (path) => ipcRenderer.invoke(IPC_CHANNELS.openWorkingDirectory, path),
   copyThreadId: (id) => ipcRenderer.invoke(IPC_CHANNELS.copyThreadId, id),
   chooseCliPath: () => ipcRenderer.invoke(IPC_CHANNELS.chooseCliPath),

@@ -3,6 +3,10 @@ import {
   Archive,
   ArchiveRestore,
   DatabaseZap,
+  FolderInput,
+  FolderKanban,
+  FolderPlus,
+  Folders,
   Inbox,
   Layers3,
   List,
@@ -25,10 +29,13 @@ import type {
   DesktopRecentsStatus,
   EnvironmentStatus,
   PlatformCapabilities,
+  ProjectRecord,
+  ProjectSnapshot,
   ThreadboxApi,
   ThreadRecord
 } from '../../../src/shared/contracts'
 import { DeleteDialog } from './components/DeleteDialog'
+import { ProjectDialog } from './components/ProjectDialog'
 import { RecentsRepairDialog } from './components/RecentsRepairDialog'
 import { SettingsDialog } from './components/SettingsDialog'
 import { ThreadTable } from './components/ThreadTable'
@@ -85,6 +92,7 @@ function operationSummary(
 
 const DEFAULT_PLATFORM_CAPABILITIES: PlatformCapabilities = {
   host: 'desktop',
+  projectManagement: false,
   desktopRecentsRepair: true,
   directoryTrash: true,
   chooseCliPath: true,
@@ -94,15 +102,19 @@ const DEFAULT_PLATFORM_CAPABILITIES: PlatformCapabilities = {
 
 export interface ThreadboxAppProps {
   api: ThreadboxApi
+  version?: string
 }
 
-export default function App({ api }: ThreadboxAppProps): React.JSX.Element {
+const EMPTY_PROJECTS: ProjectSnapshot = { projects: [], assignments: {}, refreshedAt: 0 }
+
+export default function App({ api, version = packageJson.version }: ThreadboxAppProps): React.JSX.Element {
   const { t, i18n } = useTranslation()
   const booted = useRef(false)
   const [settings, setSettings] = useState<AppSettings>({ locale: 'en', customCliPath: null })
   const [environment, setEnvironment] = useState<EnvironmentStatus>(INITIAL_ENVIRONMENT)
   const [platform, setPlatform] = useState<PlatformCapabilities>(DEFAULT_PLATFORM_CAPABILITIES)
   const [threads, setThreads] = useState<ThreadRecord[]>([])
+  const [projects, setProjects] = useState<ProjectSnapshot>(EMPTY_PROJECTS)
   const [desktopRecents, setDesktopRecents] = useState<DesktopRecentsStatus>({
     state: 'unavailable',
     staleCount: 0,
@@ -113,7 +125,7 @@ export default function App({ api }: ThreadboxAppProps): React.JSX.Element {
   const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set())
   const [collapsedThreads, setCollapsedThreads] = useState<Set<string>>(new Set())
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
-  const [viewMode, setViewMode] = useState<ThreadViewMode>('grouped')
+  const [viewMode, setViewMode] = useState<ThreadViewMode>('projects')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -122,18 +134,21 @@ export default function App({ api }: ThreadboxAppProps): React.JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [deleteIds, setDeleteIds] = useState<string[] | null>(null)
   const [recentsRepairOpen, setRecentsRepairOpen] = useState(false)
+  const [projectDialog, setProjectDialog] = useState<ProjectRecord | 'new' | null>(null)
 
   const refresh = useCallback(async (): Promise<void> => {
     setLoading(true)
     setError(null)
     try {
       const result = await api.listThreads()
+      const projectSnapshot = await api.listProjects()
       setThreads(result.threads)
+      setProjects(projectSnapshot)
       setEnvironment(result.environment)
       setDesktopRecents(result.desktopRecents)
-      const selectable = new Set(
-        result.threads.filter((thread) => thread.status !== 'active').map((thread) => thread.id)
-      )
+      const selectable = new Set(result.threads
+        .filter((thread) => platform.projectManagement || thread.status !== 'active')
+        .map((thread) => thread.id))
       setSelected(
         (current) =>
           resolveThreadSelection(
@@ -148,7 +163,7 @@ export default function App({ api }: ThreadboxAppProps): React.JSX.Element {
     } finally {
       setLoading(false)
     }
-  }, [api, t])
+  }, [api, platform.projectManagement, t])
 
   useEffect(() => {
     if (booted.current) return
@@ -171,14 +186,18 @@ export default function App({ api }: ThreadboxAppProps): React.JSX.Element {
     return () => window.clearTimeout(timer)
   }, [notice])
 
+  const groupMode = viewMode === 'directories' ? 'directories' : 'projects'
+  const projectContext = platform.projectManagement ? projects : null
   const matchedThreads = useMemo(
     () => filterThreads(
       threads,
       filters,
       Math.floor(Date.now() / 1000),
-      platform.currentWorkspaceDirectories
+      platform.currentWorkspaceDirectories,
+      projectContext,
+      groupMode
     ),
-    [filters, platform.currentWorkspaceDirectories, threads]
+    [filters, groupMode, platform.currentWorkspaceDirectories, projectContext, threads]
   )
   const treeRows = useMemo(
     () =>
@@ -192,8 +211,14 @@ export default function App({ api }: ThreadboxAppProps): React.JSX.Element {
     [collapsedThreads, expandedThreads, filters.query, matchedThreads, threads]
   )
   const visibleThreads = useMemo(() => treeRows.map((row) => row.thread), [treeRows])
-  const workspaceGroups = useMemo(() => groupThreads(threads), [threads])
-  const rowGroups = useMemo(() => groupThreadRows(threads, treeRows), [threads, treeRows])
+  const workspaceGroups = useMemo(
+    () => groupThreads(threads, projectContext, groupMode),
+    [groupMode, projectContext, threads]
+  )
+  const rowGroups = useMemo(
+    () => groupThreadRows(threads, treeRows, projectContext, groupMode),
+    [groupMode, projectContext, threads, treeRows]
+  )
   const selection = useMemo(
     () => resolveThreadSelection(threads, selected),
     [selected, threads]
@@ -209,9 +234,10 @@ export default function App({ api }: ThreadboxAppProps): React.JSX.Element {
   const selectableVisible = useMemo(
     () =>
       treeRows
-        .filter((row) => row.matchesFilter && row.thread.status !== 'active')
+        .filter((row) => row.matchesFilter &&
+          (platform.projectManagement || row.thread.status !== 'active'))
         .map((row) => row.thread),
-    [treeRows]
+    [platform.projectManagement, treeRows]
   )
   const allSelectableSelected =
     selectableVisible.length > 0 &&
@@ -230,6 +256,10 @@ export default function App({ api }: ThreadboxAppProps): React.JSX.Element {
   const deleteThreads = useMemo(
     () => (deleteIds ? threads.filter((thread) => deleteIds.includes(thread.id)) : []),
     [deleteIds, threads]
+  )
+  const customProjects = useMemo(
+    () => projects.projects.filter((project) => project.kind === 'threadbox'),
+    [projects.projects]
   )
 
   const setFilter = <K extends keyof ThreadFilters>(key: K, value: ThreadFilters[K]): void => {
@@ -254,6 +284,24 @@ export default function App({ api }: ThreadboxAppProps): React.JSX.Element {
       }
     },
     [refresh, t]
+  )
+
+  const runProjectOperation = useCallback(
+    async (operation: () => Promise<ProjectSnapshot>, closeDialog = false): Promise<void> => {
+      setBusy(true)
+      setError(null)
+      try {
+        setProjects(await operation())
+        setNotice(t('projectUpdated'))
+        setSelected(new Set())
+        if (closeDialog) setProjectDialog(null)
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : t('operationFailed'))
+      } finally {
+        setBusy(false)
+      }
+    },
+    [t]
   )
 
   const repairDesktopRecents = async (): Promise<void> => {
@@ -324,14 +372,23 @@ export default function App({ api }: ThreadboxAppProps): React.JSX.Element {
     }
   }
 
+  const changeViewMode = (mode: ThreadViewMode): void => {
+    setViewMode(mode)
+    setFilter('workspace', 'all')
+  }
+
   const archiveSelected = selectedRootThreads
-    .filter((thread) => !thread.archived)
+    .filter((thread) => thread.status !== 'active' && !thread.archived)
     .map((thread) => thread.id)
   const unarchiveSelected = selectedRootThreads
-    .filter((thread) => thread.archived)
+    .filter((thread) => thread.status !== 'active' && thread.archived)
     .map((thread) => thread.id)
-  const pinnedSelected = selectedThreads.filter((thread) => thread.pinned).map((thread) => thread.id)
-  const unpinnedSelected = selectedThreads.filter((thread) => !thread.pinned).map((thread) => thread.id)
+  const pinnedSelected = selectedThreads
+    .filter((thread) => thread.status !== 'active' && thread.pinned)
+    .map((thread) => thread.id)
+  const unpinnedSelected = selectedThreads
+    .filter((thread) => thread.status !== 'active' && !thread.pinned)
+    .map((thread) => thread.id)
   const ready = environment.state === 'ready'
 
   return (
@@ -343,7 +400,7 @@ export default function App({ api }: ThreadboxAppProps): React.JSX.Element {
           </span>
           <div>
             <h1>{t('appName')}</h1>
-            <span className="brand__version">v{packageJson.version}</span>
+            <span className="brand__version">v{version}</span>
           </div>
         </div>
         <div className="header-stats" aria-live="polite">
@@ -401,21 +458,45 @@ export default function App({ api }: ThreadboxAppProps): React.JSX.Element {
                 </button>
               )}
             </label>
+            {platform.projectManagement && (
+              <button
+                className="button button--secondary button--icon-text"
+                type="button"
+                disabled={busy}
+                onClick={() => setProjectDialog('new')}
+              >
+                <FolderPlus size={15} aria-hidden="true" />
+                {t('newProject')}
+              </button>
+            )}
             <div className="segmented-control view-control" role="group" aria-label={t('viewMode')}>
               <button
                 type="button"
-                className={viewMode === 'grouped' ? 'is-active' : undefined}
-                title={t('groupedView')}
-                onClick={() => setViewMode('grouped')}
+                className={viewMode === 'projects' ? 'is-active' : undefined}
+                title={t('projectsView')}
+                onClick={() => changeViewMode('projects')}
               >
-                <Layers3 size={15} aria-hidden="true" />
-                {t('grouped')}
+                {platform.projectManagement
+                  ? <FolderKanban size={15} aria-hidden="true" />
+                  : <Layers3 size={15} aria-hidden="true" />}
+                {platform.projectManagement ? t('projects') : t('grouped')}
               </button>
+              {platform.projectManagement && (
+                <button
+                  type="button"
+                  className={viewMode === 'directories' ? 'is-active' : undefined}
+                  title={t('directoriesView')}
+                  onClick={() => changeViewMode('directories')}
+                >
+                  <Folders size={15} aria-hidden="true" />
+                  {t('directories')}
+                </button>
+              )}
               <button
                 type="button"
                 className={viewMode === 'flat' ? 'is-active' : undefined}
                 title={t('flatView')}
-                onClick={() => setViewMode('flat')}
+                onClick={() => changeViewMode('flat')}
               >
                 <List size={15} aria-hidden="true" />
                 {t('flat')}
@@ -440,16 +521,20 @@ export default function App({ api }: ThreadboxAppProps): React.JSX.Element {
             <select
               className="workspace-filter"
               value={filters.workspace}
-              title={t('allWorkspaces')}
+              title={viewMode === 'projects' ? t('allProjects') : t('allWorkspaces')}
               onChange={(event) => setFilter('workspace', event.target.value)}
             >
-              <option value="all">{t('allWorkspaces')}</option>
+              <option value="all">
+                {viewMode === 'projects' ? t('allProjects') : t('allWorkspaces')}
+              </option>
               {platform.currentWorkspaceDirectories.length > 0 && (
                 <option value="__current__">{t('currentWorkspace')}</option>
               )}
               {workspaceGroups.map((group) => (
                 <option key={group.id} value={group.id}>
-                  {group.kind === 'standalone'
+                  {group.kind === 'threadboxProject'
+                    ? t('threadboxProjectOption', { name: group.name })
+                    : group.kind === 'standalone'
                     ? t('standaloneTasks')
                     : group.kind === 'desktopProject'
                       ? t('desktopProjectOption', { name: group.name })
@@ -543,6 +628,32 @@ export default function App({ api }: ThreadboxAppProps): React.JSX.Element {
                   <X size={15} aria-hidden="true" />
                 </button>
                 <span className="selection-divider" />
+                {platform.projectManagement && (
+                  <label className="project-move-control">
+                    <FolderInput size={15} aria-hidden="true" />
+                    <select
+                      value=""
+                      disabled={busy}
+                      aria-label={t('moveToProject')}
+                      onChange={(event) => {
+                        const value = event.target.value
+                        if (!value) return
+                        void runProjectOperation(() =>
+                          api.assignThreads(
+                            [...selection.roots],
+                            value === '__unassigned__' ? null : value
+                          )
+                        )
+                      }}
+                    >
+                      <option value="" disabled>{t('moveToProject')}</option>
+                      <option value="__unassigned__">{t('removeFromProject')}</option>
+                      {customProjects.map((project) => (
+                        <option key={project.id} value={project.id}>{project.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 <button
                   className="button button--quiet"
                   type="button"
@@ -585,7 +696,8 @@ export default function App({ api }: ThreadboxAppProps): React.JSX.Element {
                   className="button button--quiet-danger"
                   type="button"
                   title={t('deleteHint')}
-                  disabled={busy || selectedRootThreads.every((thread) => thread.pinned)}
+                  disabled={busy || selectedRootThreads.every((thread) =>
+                    thread.status === 'active' || thread.pinned)}
                   onClick={() => setDeleteIds([...selection.roots])}
                 >
                   <Trash2 size={15} aria-hidden="true" />
@@ -619,7 +731,8 @@ export default function App({ api }: ThreadboxAppProps): React.JSX.Element {
               </button>
             </div>
           </div>
-        ) : matchedThreads.length === 0 ? (
+        ) : matchedThreads.length === 0 && !(threads.length === 0 &&
+          viewMode === 'projects' && customProjects.length > 0) ? (
           <div className="center-state">
             <Inbox size={30} aria-hidden="true" />
             <h2>{t('noThreadsTitle')}</h2>
@@ -628,7 +741,7 @@ export default function App({ api }: ThreadboxAppProps): React.JSX.Element {
         ) : (
           <ThreadTable
             rows={treeRows}
-            groups={viewMode === 'grouped' ? rowGroups : null}
+            groups={viewMode !== 'flat' ? rowGroups : null}
             collapsedGroups={collapsedGroups}
             forceGroupsExpanded={filters.query.trim().length > 0}
             selected={selection.effective}
@@ -637,6 +750,7 @@ export default function App({ api }: ThreadboxAppProps): React.JSX.Element {
             allSelectableSelected={allSelectableSelected}
             someSelectableSelected={someSelectableSelected}
             allowOpenDirectory={platform.openWorkingDirectory}
+            allowActiveSelection={platform.projectManagement}
             onToggle={toggleThread}
             onToggleVisible={toggleVisible}
             onToggleExpanded={toggleExpanded}
@@ -655,6 +769,12 @@ export default function App({ api }: ThreadboxAppProps): React.JSX.Element {
               )
             }
             onDelete={(thread) => setDeleteIds([thread.id])}
+            onRenameProject={(project) => setProjectDialog(project)}
+            onDeleteProject={(project) => {
+              if (window.confirm(t('deleteProjectConfirm', { name: project.name }))) {
+                void runProjectOperation(() => api.deleteProject(project.id))
+              }
+            }}
           />
         )}
       </main>
@@ -685,6 +805,20 @@ export default function App({ api }: ThreadboxAppProps): React.JSX.Element {
           onSave={(next) => void saveSettings(next)}
           allowBrowse={platform.chooseCliPath}
           onBrowse={() => api.chooseCliPath()}
+        />
+      )}
+
+      {projectDialog && (
+        <ProjectDialog
+          initialName={projectDialog === 'new' ? undefined : projectDialog.name}
+          busy={busy}
+          onClose={() => setProjectDialog(null)}
+          onSubmit={(name) => void runProjectOperation(
+            () => projectDialog === 'new'
+              ? api.createProject(name)
+              : api.renameProject(projectDialog.id, name),
+            true
+          )}
         />
       )}
 

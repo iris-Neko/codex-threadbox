@@ -8,12 +8,13 @@ import {
   FolderKanban,
   FolderOpen,
   MessageSquare,
+  Pencil,
   Pin,
   Trash2
 } from 'lucide-react'
 import { Fragment, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { ThreadRecord } from '../../../../src/shared/contracts'
+import type { ProjectRecord, ThreadRecord } from '../../../../src/shared/contracts'
 import { formatTimestamp, type ThreadRowGroup, type ThreadTreeRow } from '../thread-utils'
 
 interface ThreadTableProps {
@@ -27,6 +28,7 @@ interface ThreadTableProps {
   allSelectableSelected: boolean
   someSelectableSelected: boolean
   allowOpenDirectory: boolean
+  allowActiveSelection: boolean
   onToggle(id: string): void
   onToggleVisible(): void
   onToggleExpanded(id: string, currentlyExpanded: boolean): void
@@ -35,6 +37,8 @@ interface ThreadTableProps {
   onCopyId(id: string): void
   onArchive(thread: ThreadRecord): void
   onDelete(thread: ThreadRecord): void
+  onRenameProject(project: ProjectRecord): void
+  onDeleteProject(project: ProjectRecord): void
 }
 
 function StateCell({ thread }: { thread: ThreadRecord }): React.JSX.Element {
@@ -81,6 +85,7 @@ export function ThreadTable({
   allSelectableSelected,
   someSelectableSelected,
   allowOpenDirectory,
+  allowActiveSelection,
   onToggle,
   onToggleVisible,
   onToggleExpanded,
@@ -88,7 +93,9 @@ export function ThreadTable({
   onOpenDirectory,
   onCopyId,
   onArchive,
-  onDelete
+  onDelete,
+  onRenameProject,
+  onDeleteProject
 }: ThreadTableProps): React.JSX.Element {
   const { t } = useTranslation()
   const selectAllRef = useRef<HTMLInputElement>(null)
@@ -101,8 +108,8 @@ export function ThreadTable({
 
   const renderRow = ({ thread, depth, hasChildren, expanded, matchesFilter }: ThreadTreeRow) => {
     const automaticallyIncluded = implicitlySelected.has(thread.id)
-    const disabled = thread.status === 'active' || !matchesFilter
-    const mutationDisabled = disabled || automaticallyIncluded
+    const disabled = (!allowActiveSelection && thread.status === 'active') || !matchesFilter
+    const mutationDisabled = thread.status === 'active' || !matchesFilter || automaticallyIncluded
     const rowClassName = [
       selected.has(thread.id) ? 'is-selected' : null,
       automaticallyIncluded ? 'thread-row--auto-selected' : null,
@@ -248,7 +255,9 @@ export function ThreadTable({
     const collapsed = !forceGroupsExpanded && collapsedGroups.has(group.id)
     const title = group.kind === 'standalone' ? t('standaloneTasks') : group.name
     const kindLabel =
-      group.kind === 'desktopProject'
+      group.kind === 'threadboxProject'
+        ? t('threadboxProject')
+        : group.kind === 'desktopProject'
         ? t('desktopProject')
         : group.kind === 'standalone'
           ? t('standaloneGroup')
@@ -264,7 +273,7 @@ export function ThreadTable({
           ? group.directories[0]
           : t('groupDirectoryCount', { count: group.directories.length })
     const GroupIcon =
-      group.kind === 'desktopProject'
+      group.kind === 'threadboxProject' || group.kind === 'desktopProject'
         ? FolderKanban
         : group.kind === 'standalone'
           ? MessageSquare
@@ -273,33 +282,57 @@ export function ThreadTable({
     return (
       <tr className="thread-group-row">
         <td colSpan={7}>
-          <button
-            className="thread-group-toggle"
-            type="button"
-            aria-expanded={!collapsed}
-            aria-label={t(collapsed ? 'expandGroup' : 'collapseGroup', { title })}
-            onClick={() => onToggleGroup(group.id)}
-          >
-            {collapsed ? (
-              <ChevronRight size={17} aria-hidden="true" />
-            ) : (
-              <ChevronDown size={17} aria-hidden="true" />
-            )}
-            <span className="thread-group-icon" aria-hidden="true">
-              <GroupIcon size={16} />
-            </span>
-            <span className="thread-group-body">
-              <span className="thread-group-line">
-                <strong>{title}</strong>
-                <span className="thread-group-kind">{kindLabel}</span>
+          <div className="thread-group-header">
+            <button
+              className="thread-group-toggle"
+              type="button"
+              aria-expanded={!collapsed}
+              aria-label={t(collapsed ? 'expandGroup' : 'collapseGroup', { title })}
+              onClick={() => onToggleGroup(group.id)}
+            >
+              {collapsed ? (
+                <ChevronRight size={17} aria-hidden="true" />
+              ) : (
+                <ChevronDown size={17} aria-hidden="true" />
+              )}
+              <span className="thread-group-icon" aria-hidden="true">
+                <GroupIcon size={16} />
               </span>
-              <span className="thread-group-detail" title={detail}>{detail}</span>
-            </span>
-            <span className="thread-group-count">
-              {t('groupTaskCount', { count: group.taskCount })}
-              {group.spawnedCount > 0 && ` · ${t('spawnedTaskCount', { count: group.spawnedCount })}`}
-            </span>
-          </button>
+              <span className="thread-group-body">
+                <span className="thread-group-line">
+                  <strong>{title}</strong>
+                  <span className="thread-group-kind">{kindLabel}</span>
+                </span>
+                <span className="thread-group-detail" title={detail}>{detail}</span>
+              </span>
+              <span className="thread-group-count">
+                {t('groupTaskCount', { count: group.taskCount })}
+                {group.spawnedCount > 0 && ` · ${t('spawnedTaskCount', { count: group.spawnedCount })}`}
+              </span>
+            </button>
+            {group.kind === 'threadboxProject' && group.project && (
+              <div className="thread-group-actions">
+                <button
+                  className="icon-button icon-button--small"
+                  type="button"
+                  title={t('renameProject')}
+                  aria-label={t('renameProject')}
+                  onClick={() => onRenameProject(group.project!)}
+                >
+                  <Pencil size={15} aria-hidden="true" />
+                </button>
+                <button
+                  className="icon-button icon-button--small icon-button--danger"
+                  type="button"
+                  title={t('deleteProject')}
+                  aria-label={t('deleteProject')}
+                  onClick={() => onDeleteProject(group.project!)}
+                >
+                  <Trash2 size={15} aria-hidden="true" />
+                </button>
+              </div>
+            )}
+          </div>
         </td>
       </tr>
     )

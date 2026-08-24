@@ -1,5 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import packageJson from '../package.json'
 import { ThreadboxApp } from '../../ui/src/index'
 import '../../ui/src/i18n'
 import '../../ui/src/styles-v2.css'
@@ -57,6 +58,11 @@ const api: ThreadboxApi = {
   archiveThreads: (ids) => invoke('archiveThreads', ids),
   unarchiveThreads: (ids) => invoke('unarchiveThreads', ids),
   setPinned: (ids, pinned) => invoke('setPinned', ids, pinned),
+  listProjects: () => invoke('listProjects'),
+  createProject: (name) => invoke('createProject', name),
+  renameProject: (id, name) => invoke('renameProject', id, name),
+  deleteProject: (id) => invoke('deleteProject', id),
+  assignThreads: (ids, projectId) => invoke('assignThreads', ids, projectId),
   openWorkingDirectory: (path) => invoke('openWorkingDirectory', path),
   copyThreadId: (id) => invoke('copyThreadId', id),
   chooseCliPath: () => invoke('chooseCliPath'),
@@ -66,6 +72,6 @@ const api: ThreadboxApi = {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ThreadboxApp api={api} />
+    <ThreadboxApp api={api} version={packageJson.version} />
   </StrictMode>
 )

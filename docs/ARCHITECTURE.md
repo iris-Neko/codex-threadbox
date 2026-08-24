@@ -14,7 +14,7 @@ Threadbox is an npm workspace with shared core and UI packages plus three host a
 
 `@threadbox/ui` is the React task manager. It receives an injected typed `ThreadboxApi`; it has no Electron, VS Code, filesystem, or Node dependency. `PlatformCapabilities` hides host-only controls such as desktop Recents repair, directory Trash, native executable selection, and current-workspace filtering.
 
-Desktop Project tasks are grouped by `projectId`, VS Code and CLI tasks by working directory, and projectless desktop tasks separately. Spawned tasks fold under their parent row, and selecting a parent automatically includes descendants.
+Desktop Project tasks are grouped by `projectId`, and projectless tasks fall back to working-directory groups. VS Code can overlay a Threadbox-owned project assignment on a root task without changing its official `projectId`; removing the overlay restores the official or directory group. Spawned tasks fold under their parent row and inherit their root task's Threadbox project.
 
 ## Desktop host
 
@@ -37,6 +37,8 @@ The extension declares `extensionKind: ["workspace"]`, so Remote SSH, Dev Contai
 
 The Webview has a strict nonce CSP, bundled local resources, no Node access, request IDs, timeouts, a fixed method allowlist, and per-method argument validation. The extension rechecks workspace trust before any Codex probe, task listing, mutation, or folder-open request. Machine-scoped settings configure the remote CLI path, Codex home, and language.
 
+Project names and root-task assignments use a versioned JSON file under the remote extension host's `globalStorageUri`. Writes use temporary-file replacement; corrupt files are preserved with a timestamped suffix before an empty catalog is created. The data is isolated per extension host, contains no transcript content, and is not synchronized between servers.
+
 ## Deletion safety
 
 Permanent deletion refreshes inventory first. Running and pinned tasks are skipped. If a parent and descendant are selected, only the highest selected parent is submitted because App Server deletion cascades. Requests run sequentially, and one failure does not stop the remaining tasks.
@@ -53,4 +55,4 @@ Repair is explicit. It first creates an SQLite online backup under `~/.codex/bac
 
 Codex CLI `0.149.0` is the v0.3 minimum baseline. Generated TypeScript protocol files are committed under `src/shared/protocol/generated`; capabilities added after the baseline are gated at runtime.
 
-Threadbox has no telemetry and persists no task or conversation copy. Desktop stores interface language and optional CLI path. VS Code uses machine-scoped settings. The CLI stores no Threadbox settings.
+Threadbox has no telemetry and persists no task or conversation copy. Desktop stores interface language and optional CLI path. VS Code uses machine-scoped settings plus its host-local project names and task-ID assignments. The CLI stores no Threadbox settings.

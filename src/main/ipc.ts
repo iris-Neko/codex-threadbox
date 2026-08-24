@@ -8,6 +8,8 @@ import {
 import type { AppServerClient, CodexRuntime, ThreadService } from '@threadbox/core'
 import type { SettingsStore } from './settings-store'
 
+const EMPTY_PROJECTS = { projects: [], assignments: {}, refreshedAt: 0 }
+
 function validIds(value: unknown): string[] {
   if (!Array.isArray(value) || value.length > 500) throw new Error('Invalid thread selection.')
   const ids = value.filter(
@@ -39,6 +41,7 @@ export function registerIpcHandlers(
 ): void {
   ipcMain.handle(IPC_CHANNELS.platformCapabilities, () => ({
     host: 'desktop',
+    projectManagement: false,
     desktopRecentsRepair: true,
     directoryTrash: true,
     chooseCliPath: true,
@@ -60,6 +63,19 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.setPinned, (_event, ids: unknown, pinned: unknown) => {
     if (typeof pinned !== 'boolean') throw new Error('Invalid pin state.')
     return service.setPinned(validIds(ids), pinned)
+  })
+  ipcMain.handle(IPC_CHANNELS.listProjects, () => EMPTY_PROJECTS)
+  ipcMain.handle(IPC_CHANNELS.createProject, () => {
+    throw new Error('Project management is only available in the VS Code extension.')
+  })
+  ipcMain.handle(IPC_CHANNELS.renameProject, () => {
+    throw new Error('Project management is only available in the VS Code extension.')
+  })
+  ipcMain.handle(IPC_CHANNELS.deleteProject, () => {
+    throw new Error('Project management is only available in the VS Code extension.')
+  })
+  ipcMain.handle(IPC_CHANNELS.assignThreads, () => {
+    throw new Error('Project management is only available in the VS Code extension.')
   })
   ipcMain.handle(IPC_CHANNELS.openWorkingDirectory, async (_event, path: unknown) => {
     if (

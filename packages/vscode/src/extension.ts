@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import * as vscode from 'vscode'
 import { AppServerClient, CodexRuntime, ThreadService } from '../../core/src/index'
 import type {
@@ -10,13 +10,32 @@ import type {
   ThreadboxApi
 } from '../../../src/shared/contracts'
 import { parseRpcRequest, type RpcRequest, type RpcResponse } from './rpc'
-import { ThreadboxSidebarProvider } from './sidebar'
+import { ProjectStore } from './project-store'
+import { SidebarItem, ThreadboxSidebarProvider } from './sidebar'
 import { requireWorkspaceTrust } from './workspace-trust'
 
 const CONFIGURATION = 'threadbox'
 const COMMAND = 'threadbox.openManager'
 const REFRESH_SIDEBAR_COMMAND = 'threadbox.refreshSidebar'
 const SIDEBAR_VIEW = 'threadbox.sidebar'
+const SIDEBAR_COMMANDS = {
+  newProject: 'threadbox.newProject',
+  renameProject: 'threadbox.renameProject',
+  deleteProject: 'threadbox.deleteProject',
+  moveToProject: 'threadbox.moveToProject',
+  archive: 'threadbox.archive',
+  unarchive: 'threadbox.unarchive',
+  pin: 'threadbox.pin',
+  unpin: 'threadbox.unpin',
+  delete: 'threadbox.delete',
+  copyId: 'threadbox.copyId',
+  openDirectory: 'threadbox.openDirectory'
+} as const
+
+function selectedItems(primary?: SidebarItem, selection?: SidebarItem[]): SidebarItem[] {
+  if (selection && selection.length > 0) return selection
+  return primary ? [primary] : []
+}
 
 function configuredString(name: string): string | null {
   const value = vscode.workspace.getConfiguration(CONFIGURATION).get<unknown>(name)
@@ -34,6 +53,8 @@ class RuntimeHost implements vscode.Disposable {
   private client: AppServerClient | null = null
   private service: ThreadService | null = null
 
+  constructor(private readonly version: string) {}
+
   getRuntime(): CodexRuntime {
     if (this.runtime) return this.runtime
     const environment = { ...process.env }
@@ -50,7 +71,7 @@ class RuntimeHost implements vscode.Disposable {
     this.client = new AppServerClient(this.getRuntime(), {
       name: 'codex_threadbox_vscode',
       title: 'Threadbox for Codex VS Code',
-      version: '0.3.0'
+      version: this.version
     })
     this.service = new ThreadService(this.client)
     return this.service
@@ -82,6 +103,7 @@ function platformCapabilities(): PlatformCapabilities {
   )]
   return {
     host: 'vscode',
+    projectManagement: true,
     desktopRecentsRepair: false,
     directoryTrash: false,
     chooseCliPath: false,
@@ -97,7 +119,7 @@ function directoryUri(path: string): vscode.Uri {
   return remoteBase ? remoteBase.with({ path }) : vscode.Uri.file(path)
 }
 
-function createApi(runtime: RuntimeHost): ThreadboxApi {
+function createApi(runtime: RuntimeHost, projects: ProjectStore): ThreadboxApi {
   return {
     getPlatformCapabilities: async () => platformCapabilities(),
     getEnvironmentStatus: async () => {
@@ -106,7 +128,9 @@ function createApi(runtime: RuntimeHost): ThreadboxApi {
     },
     listThreads: async () => {
       requireWorkspaceTrust(vscode.workspace.isTrusted)
-      return runtime.getService().listThreads()
+      const result = await runtime.getService().listThreads()
+      await projects.setInventory(result.threads)
+      return result
     },
     deleteThreads: async (ids) => {
       requireWorkspaceTrust(vscode.workspace.isTrusted)
@@ -124,6 +148,26 @@ function createApi(runtime: RuntimeHost): ThreadboxApi {
     setPinned: async (ids, pinned) => {
       requireWorkspaceTrust(vscode.workspace.isTrusted)
       return runtime.getService().setPinned(ids, pinned)
+    },
+    listProjects: async () => {
+      requireWorkspaceTrust(vscode.workspace.isTrusted)
+      return projects.list()
+    },
+    createProject: async (name) => {
+      requireWorkspaceTrust(vscode.workspace.isTrusted)
+      return projects.create(name)
+    },
+    renameProject: async (id, name) => {
+      requireWorkspaceTrust(vscode.workspace.isTrusted)
+      return projects.renameProject(id, name)
+    },
+    deleteProject: async (id) => {
+      requireWorkspaceTrust(vscode.workspace.isTrusted)
+      return projects.deleteProject(id)
+    },
+    assignThreads: async (ids, projectId) => {
+      requireWorkspaceTrust(vscode.workspace.isTrusted)
+      return projects.assign(ids, projectId)
     },
     openWorkingDirectory: async (path) => {
       requireWorkspaceTrust(vscode.workspace.isTrusted)
@@ -195,7 +239,8 @@ function attachRpc(
     let response: RpcResponse
     try {
       response = { kind: 'threadbox.response', id: request.id, ok: true, value: await dispatch(api, request) }
-      if (['deleteThreads', 'archiveThreads', 'unarchiveThreads', 'setPinned', 'updateSettings']
+      if (['deleteThreads', 'archiveThreads', 'unarchiveThreads', 'setPinned', 'updateSettings',
+        'createProject', 'renameProject', 'deleteProject', 'assignThreads']
         .includes(request.method)) onMutation()
     } catch (error) {
       response = {
@@ -214,12 +259,16 @@ export interface ThreadboxExtensionApi {
 }
 
 export function activate(context: vscode.ExtensionContext): ThreadboxExtensionApi {
-  const runtime = new RuntimeHost()
-  const api = createApi(runtime)
+  const version = String(context.extension.packageJSON.version ?? '0.4.0')
+  const runtime = new RuntimeHost(version)
+  const projects = new ProjectStore(join(context.globalStorageUri.fsPath, 'projects-v1.json'))
+  const api = createApi(runtime, projects)
   const sidebar = new ThreadboxSidebarProvider(api, COMMAND, vscode.env.language)
   const sidebarView = vscode.window.createTreeView(SIDEBAR_VIEW, {
     treeDataProvider: sidebar,
-    showCollapseAll: false
+    dragAndDropController: sidebar,
+    canSelectMany: true,
+    showCollapseAll: true
   })
   let panel: vscode.WebviewPanel | null = null
   context.subscriptions.push(runtime, sidebar, sidebarView)
@@ -236,6 +285,35 @@ export function activate(context: vscode.ExtensionContext): ThreadboxExtensionAp
   context.subscriptions.push(vscode.commands.registerCommand(REFRESH_SIDEBAR_COMMAND, () => {
     sidebar.refresh()
   }))
+  context.subscriptions.push(
+    vscode.commands.registerCommand(SIDEBAR_COMMANDS.newProject, () => sidebar.createProject()),
+    vscode.commands.registerCommand(SIDEBAR_COMMANDS.renameProject,
+      (item?: SidebarItem) => sidebar.renameProject(item)),
+    vscode.commands.registerCommand(SIDEBAR_COMMANDS.deleteProject,
+      (item?: SidebarItem) => sidebar.deleteProject(item)),
+    vscode.commands.registerCommand(SIDEBAR_COMMANDS.moveToProject,
+      (item?: SidebarItem, selection?: SidebarItem[]) => sidebar.moveThreads(selectedItems(item, selection))),
+    vscode.commands.registerCommand(SIDEBAR_COMMANDS.archive,
+      (item?: SidebarItem, selection?: SidebarItem[]) =>
+        sidebar.archiveThreads(selectedItems(item, selection), true)),
+    vscode.commands.registerCommand(SIDEBAR_COMMANDS.unarchive,
+      (item?: SidebarItem, selection?: SidebarItem[]) =>
+        sidebar.archiveThreads(selectedItems(item, selection), false)),
+    vscode.commands.registerCommand(SIDEBAR_COMMANDS.pin,
+      (item?: SidebarItem, selection?: SidebarItem[]) =>
+        sidebar.pinThreads(selectedItems(item, selection), true)),
+    vscode.commands.registerCommand(SIDEBAR_COMMANDS.unpin,
+      (item?: SidebarItem, selection?: SidebarItem[]) =>
+        sidebar.pinThreads(selectedItems(item, selection), false)),
+    vscode.commands.registerCommand(SIDEBAR_COMMANDS.delete,
+      (item?: SidebarItem, selection?: SidebarItem[]) =>
+        sidebar.deleteThreads(selectedItems(item, selection))),
+    vscode.commands.registerCommand(SIDEBAR_COMMANDS.copyId,
+      (item?: SidebarItem, selection?: SidebarItem[]) =>
+        sidebar.copyIds(selectedItems(item, selection))),
+    vscode.commands.registerCommand(SIDEBAR_COMMANDS.openDirectory,
+      (item?: SidebarItem) => sidebar.openDirectory(item))
+  )
   context.subscriptions.push(vscode.commands.registerCommand(COMMAND, () => {
     if (panel) {
       panel.reveal(vscode.ViewColumn.One)

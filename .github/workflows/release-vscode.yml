@@ -1,0 +1,105 @@
+name: Release VS Code Extension
+
+on:
+  push:
+    tags:
+      - 'vscode-v*'
+
+env:
+  NODE_VERSION: 24.15.0
+
+jobs:
+  build:
+    name: Test and package VSIX
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: chmod +x tests/fixtures/bin/codex
+      - name: Verify tag matches extension version
+        run: |
+          VERSION=$(node -p "require('./packages/vscode/package.json').version")
+          test "$GITHUB_REF_NAME" = "vscode-v$VERSION"
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: xvfb-run -a npm run test:vscode
+      - name: Generate checksum
+        run: |
+          cd dist
+          sha256sum threadbox-for-codex-*.vsix > threadbox-for-codex-SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vscode-extension
+          if-no-files-found: error
+          path: |
+            dist/threadbox-for-codex-*.vsix
+            dist/threadbox-for-codex-SHA256SUMS.txt
+
+  draft-release:
+    name: Create draft GitHub Release
+    needs: build
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: vscode-extension
+          path: release-artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: release-artifacts/*
+
+  publish:
+    name: Publish extension marketplaces
+    needs: [build, draft-release]
+    permissions:
+      contents: read
+    env:
+      VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      OVSX_PAT: ${{ secrets.OVSX_PAT }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: vscode-extension
+          path: release-artifacts
+      - name: Resolve VSIX
+        run: echo "VSIX=$(find release-artifacts -maxdepth 1 -name '*.vsix' -print -quit)" >> "$GITHUB_ENV"
+      - name: Publish VS Code Marketplace extension
+        if: env.VSCE_PAT != ''
+        run: npx --yes @vscode/vsce@3.6.2 publish --packagePath "$VSIX" --pat "$VSCE_PAT"
+      - name: Verify manually published VS Code Marketplace extension
+        if: env.VSCE_PAT == ''
+        run: |
+          VERSION=$(node -p "require('./packages/vscode/package.json').version")
+          npx --yes @vscode/vsce@3.6.2 show irisNeko.threadbox-for-codex --json > marketplace.json
+          node -e "const e=require('./marketplace.json');if(!e.versions?.some(v=>v.version===process.argv[1]))process.exit(1)" "$VERSION"
+      - name: Require Open VSX token
+        run: test -n "$OVSX_PAT"
+      - name: Publish Open VSX extension
+        run: npx --yes ovsx@0.10.7 publish "$VSIX" --pat "$OVSX_PAT"
+
+  finalize-release:
+    name: Publish GitHub Release
+    needs: publish
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
+        env:
+          GH_TOKEN: ${{ github.token }}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ThreadRecord } from '../../src/shared/contracts'
+import type { ProjectSnapshot, ThreadRecord } from '../../src/shared/contracts'
 import {
   DEFAULT_FILTERS,
   deselectThreadSubtrees,
@@ -94,6 +94,45 @@ describe('filterThreads', () => {
     const groups = groupThreads([vscode, cli])
     expect(groups).toHaveLength(1)
     expect(groups[0]?.threads.map((thread) => thread.id)).toEqual(['vscode', 'cli'])
+  })
+
+  it('uses Threadbox projects over official projects and restores the official group when removed', () => {
+    const thread = record({ id: 'task', projectId: 'official-1', source: 'vscode' })
+    const projects: ProjectSnapshot = {
+      projects: [
+        { id: 'threadbox:focus', name: 'Focus', kind: 'threadbox', readOnly: false,
+          createdAt: 1, updatedAt: 1 },
+        { id: 'official:official-1', name: 'Official', kind: 'official', readOnly: true,
+          createdAt: null, updatedAt: null }
+      ],
+      assignments: { task: 'threadbox:focus' },
+      refreshedAt: 1
+    }
+    expect(groupThreads([thread], projects)[0]).toMatchObject({
+      kind: 'threadboxProject', name: 'Focus', projectId: 'threadbox:focus'
+    })
+    expect(groupThreads([thread], { ...projects, assignments: {} })[0]).toMatchObject({
+      kind: 'desktopProject', name: 'Official', projectId: 'official:official-1'
+    })
+    expect(groupThreads([thread], projects, 'directories')[0]).toMatchObject({
+      kind: 'localWorkspace', name: 'threadbox'
+    })
+    expect(filterThreads([thread], { ...DEFAULT_FILTERS, query: 'focus' }, 10, [], projects))
+      .toEqual([thread])
+  })
+
+  it('keeps empty Threadbox projects available for management', () => {
+    const projects: ProjectSnapshot = {
+      projects: [{ id: 'threadbox:empty', name: 'Empty', kind: 'threadbox', readOnly: false,
+        createdAt: 1, updatedAt: 1 }],
+      assignments: {}, refreshedAt: 1
+    }
+    expect(groupThreads([], projects)).toMatchObject([
+      { kind: 'threadboxProject', name: 'Empty', threads: [] }
+    ])
+    expect(groupThreadRows([], [], projects)).toMatchObject([
+      { kind: 'threadboxProject', name: 'Empty', rows: [], taskCount: 0 }
+    ])
   })
 
   it('keeps spawned descendants in their parent group and groups visible tree rows', () => {

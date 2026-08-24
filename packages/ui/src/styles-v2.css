@@ -353,6 +353,23 @@ input[type='checkbox'] {
   background: var(--border);
 }
 
+.project-move-control {
+  display: inline-flex;
+  min-width: max-content;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.project-move-control select {
+  width: 170px;
+  height: 30px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  padding: 0 25px 0 8px;
+}
+
 .button {
   display: inline-flex;
   min-height: 34px;
@@ -512,10 +529,18 @@ input[type='checkbox'] {
   background: #eef2f3;
 }
 
+.thread-group-header {
+  display: flex;
+  min-height: 49px;
+  align-items: stretch;
+}
+
 .thread-group-toggle {
   display: grid;
-  width: 100%;
+  width: auto;
   min-height: 49px;
+  min-width: 0;
+  flex: 1;
   grid-template-columns: 22px 28px minmax(0, 1fr) max-content;
   align-items: center;
   gap: 6px;
@@ -524,6 +549,14 @@ input[type='checkbox'] {
   border: 0;
   background: transparent;
   text-align: left;
+}
+
+.thread-group-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  padding-right: 12px;
 }
 
 .thread-group-toggle:hover {

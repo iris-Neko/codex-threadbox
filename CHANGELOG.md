@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## VS Code 0.4.0 - 2026-08-24
+
+- Add host-local Threadbox projects with create, rename, delete, assignment, official-project fallback, and root-task inheritance.
+- Replace the summary-only Activity Bar view with a project tree supporting drag-and-drop, multi-select, archive, pin, delete, copy-ID, and open-directory actions.
+- Add project, directory, and flat views plus project filtering and batch assignment to the full manager.
+- Split VS Code extension releases from the desktop and npm CLI release pipeline.
+
 ## 0.3.0 - 2026-08-23
 
 ### Added

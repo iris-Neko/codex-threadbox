@@ -2,7 +2,7 @@
   "name": "threadbox-for-codex",
   "displayName": "Threadbox for Codex",
   "description": "Manage Codex tasks locally, including on Remote SSH, Dev Containers, and Codespaces.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "irisNeko",
   "license": "MIT",
   "private": true,
@@ -49,6 +49,62 @@
         "title": "Refresh",
         "category": "Threadbox",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "threadbox.newProject",
+        "title": "New Project",
+        "category": "Threadbox",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "threadbox.renameProject",
+        "title": "Rename Project",
+        "category": "Threadbox"
+      },
+      {
+        "command": "threadbox.deleteProject",
+        "title": "Delete Project",
+        "category": "Threadbox"
+      },
+      {
+        "command": "threadbox.moveToProject",
+        "title": "Move to Project...",
+        "category": "Threadbox"
+      },
+      {
+        "command": "threadbox.archive",
+        "title": "Archive",
+        "category": "Threadbox"
+      },
+      {
+        "command": "threadbox.unarchive",
+        "title": "Unarchive",
+        "category": "Threadbox"
+      },
+      {
+        "command": "threadbox.pin",
+        "title": "Pin",
+        "category": "Threadbox"
+      },
+      {
+        "command": "threadbox.unpin",
+        "title": "Unpin",
+        "category": "Threadbox"
+      },
+      {
+        "command": "threadbox.delete",
+        "title": "Delete Permanently...",
+        "category": "Threadbox"
+      },
+      {
+        "command": "threadbox.copyId",
+        "title": "Copy Task ID",
+        "category": "Threadbox"
+      },
+      {
+        "command": "threadbox.openDirectory",
+        "title": "Open Working Directory",
+        "category": "Threadbox"
       }
     ],
     "viewsContainers": {
@@ -79,6 +135,68 @@
           "command": "threadbox.refreshSidebar",
           "when": "view == threadbox.sidebar",
           "group": "navigation@2"
+        },
+        {
+          "command": "threadbox.newProject",
+          "when": "view == threadbox.sidebar",
+          "group": "navigation@3"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "threadbox.newProject",
+          "when": "view == threadbox.sidebar && viewItem == threadbox.projects",
+          "group": "inline@1"
+        },
+        {
+          "command": "threadbox.renameProject",
+          "when": "view == threadbox.sidebar && viewItem == threadbox.project.threadbox",
+          "group": "inline@1"
+        },
+        {
+          "command": "threadbox.deleteProject",
+          "when": "view == threadbox.sidebar && viewItem == threadbox.project.threadbox",
+          "group": "project@2"
+        },
+        {
+          "command": "threadbox.moveToProject",
+          "when": "view == threadbox.sidebar && viewItem =~ /^threadbox\\.thread\\./",
+          "group": "project@1"
+        },
+        {
+          "command": "threadbox.archive",
+          "when": "view == threadbox.sidebar && viewItem =~ /^threadbox\\.thread\\.active\\./",
+          "group": "manage@1"
+        },
+        {
+          "command": "threadbox.unarchive",
+          "when": "view == threadbox.sidebar && viewItem =~ /^threadbox\\.thread\\.archived\\./",
+          "group": "manage@1"
+        },
+        {
+          "command": "threadbox.pin",
+          "when": "view == threadbox.sidebar && viewItem =~ /\\.unpinned$/",
+          "group": "manage@2"
+        },
+        {
+          "command": "threadbox.unpin",
+          "when": "view == threadbox.sidebar && viewItem =~ /\\.pinned$/",
+          "group": "manage@2"
+        },
+        {
+          "command": "threadbox.copyId",
+          "when": "view == threadbox.sidebar && viewItem =~ /^threadbox\\.thread\\./",
+          "group": "navigation@1"
+        },
+        {
+          "command": "threadbox.openDirectory",
+          "when": "view == threadbox.sidebar && viewItem =~ /^threadbox\\.thread\\./",
+          "group": "navigation@2"
+        },
+        {
+          "command": "threadbox.delete",
+          "when": "view == threadbox.sidebar && viewItem =~ /^threadbox\\.thread\\./",
+          "group": "danger@1"
         }
       ]
     },
