@@ -1,18 +1,21 @@
 import { input } from '@inquirer/prompts'
 import { Command, CommanderError } from 'commander'
-import type { BatchOperationResult } from '../../../src/shared/contracts'
+import type { BatchOperationResult, DeletePreview } from '../../../src/shared/contracts'
 import { runInteractive } from './interactive'
+import { parseLanguage, resolveLanguage } from './options'
 import {
   errorEnvelope,
   filterList,
   formatThreadTable,
   listEnvelope,
   operationSucceeded,
+  previewEnvelope,
   resultEnvelope,
   statusEnvelope,
   type ListOptions
 } from './output'
 import { createCliRuntime, type CliRuntimeOptions } from './runtime'
+import { CLI_VERSION } from './version'
 
 interface GlobalOptions extends CliRuntimeOptions {
   json?: boolean
@@ -22,13 +25,6 @@ interface GlobalOptions extends CliRuntimeOptions {
 let stopActiveClient: (() => void) | null = null
 
 class CliUsageError extends Error {}
-
-function language(value?: string): 'en' | 'zh-CN' {
-  if (value === 'en' || value === 'zh-CN') return value
-  return Intl.DateTimeFormat().resolvedOptions().locale.toLowerCase().startsWith('zh')
-    ? 'zh-CN'
-    : 'en'
-}
 
 function writeJson(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`)
@@ -53,9 +49,14 @@ async function withRuntime<T>(
   }
 }
 
-function printResult(command: string, result: BatchOperationResult, json: boolean): number {
+function printResult(
+  command: string,
+  result: BatchOperationResult,
+  json: boolean,
+  preview?: DeletePreview
+): number {
   const ok = operationSucceeded(result)
-  if (json) writeJson(resultEnvelope(command, ok, result))
+  if (json) writeJson(resultEnvelope(command, ok, result, preview))
   else {
     process.stdout.write(
       `${command}: ${result.succeeded.length} succeeded, ${result.failed.length} failed, ${result.skipped.length} skipped\n`
@@ -67,26 +68,53 @@ function printResult(command: string, result: BatchOperationResult, json: boolea
   return ok ? 0 : 1
 }
 
-async function confirmDelete(ids: string[], yes: boolean): Promise<boolean> {
+function deletePreviewText(preview: DeletePreview): string {
+  const lines = [
+    `Delete preview: ${preview.roots.length} root task(s), ${preview.cascadedCount} spawned descendant(s).`
+  ]
+  for (const root of preview.roots) {
+    lines.push(`- ${root.title} [${root.id}]`)
+    lines.push(`  ${root.cwd}${root.descendantCount > 0 ? ` (+${root.descendantCount} spawned)` : ''}`)
+  }
+  if (preview.skipped.length > 0) {
+    lines.push('Skipped:')
+    for (const item of preview.skipped) lines.push(`- ${item.id}: ${item.message}`)
+  }
+  return `${lines.join('\n')}\n`
+}
+
+async function confirmDelete(preview: DeletePreview, yes: boolean): Promise<boolean> {
   if (yes) return true
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     throw new CliUsageError('Permanent deletion in a non-interactive terminal requires --yes.')
   }
-  process.stderr.write(`Permanently delete ${ids.length} selected task(s) and spawned descendants.\n`)
-  return await input({ message: 'Type DELETE to continue' }) === 'DELETE'
+  return await input({
+    message: `Type DELETE to permanently delete ${preview.roots.length} root task(s)`
+  }) === 'DELETE'
 }
 
 async function main(argv: string[]): Promise<number> {
   const program = new Command()
     .name('threadbox')
     .description('Headless task manager for Codex App Server')
-    .version('0.3.0')
+    .version(CLI_VERSION)
     .option('--codex-binary <path>', 'Codex executable path or command')
     .option('--codex-home <path>', 'Codex home directory')
     .option('--lang <language>', 'Interface language: en or zh-CN')
     .option('--json', 'Emit versioned JSON without ANSI output')
     .showHelpAfterError()
     .exitOverride()
+
+  program.hook('preAction', () => {
+    const value = program.opts<GlobalOptions>().lang
+    if (value) {
+      try {
+        parseLanguage(value)
+      } catch (error) {
+        throw new CliUsageError(error instanceof Error ? error.message : String(error))
+      }
+    }
+  })
 
   program.configureOutput({
     writeErr: (value) => {
@@ -103,7 +131,7 @@ async function main(argv: string[]): Promise<number> {
       return
     }
     process.exitCode = await withRuntime(options, ({ service }) =>
-      runInteractive(service, language(options.lang))
+      runInteractive(service, resolveLanguage(options.lang))
     )
   })
 
@@ -131,6 +159,7 @@ async function main(argv: string[]): Promise<number> {
     .option('--cwd <path>', 'Filter by exact working directory')
     .option('--search <text>', 'Search task metadata')
     .option('--sort <mode>', 'updated-desc, updated-asc, created-desc, or title-asc', 'updated-desc')
+    .option('--include-spawned', 'Include internal spawned tasks')
     .action(async (listOptions: ListOptions) => {
       const options = program.opts<GlobalOptions>()
       const listed = await withRuntime(options, ({ service }) => service.listThreads())
@@ -166,16 +195,24 @@ async function main(argv: string[]): Promise<number> {
     .command('delete <ids...>')
     .description('Permanently delete explicit task IDs and spawned descendants')
     .option('-y, --yes', 'Skip the typed confirmation')
-    .action(async (ids: string[], commandOptions: { yes?: boolean }) => {
+    .option('--dry-run', 'Preview the final deletion set without deleting')
+    .action(async (ids: string[], commandOptions: { yes?: boolean; dryRun?: boolean }) => {
       const options = program.opts<GlobalOptions>()
-      if (!await confirmDelete(ids, Boolean(commandOptions.yes))) {
-        process.exitCode = 130
-        return
-      }
-      const result = await withRuntime(options, ({ service }) =>
-        service.deleteThreads(ids, { trashWorkingDirectories: [] })
-      )
-      process.exitCode = printResult('delete', result, Boolean(options.json))
+      process.exitCode = await withRuntime(options, async ({ service }) => {
+        const preview = await service.previewDeleteThreads(ids)
+        if (commandOptions.dryRun) {
+          if (options.json) writeJson(previewEnvelope('delete', preview))
+          else process.stdout.write(deletePreviewText(preview))
+          return preview.skipped.length === 0 && preview.roots.length > 0 ? 0 : 1
+        }
+
+        if (!options.json) process.stderr.write(deletePreviewText(preview))
+        if (preview.roots.length > 0 && !await confirmDelete(preview, Boolean(commandOptions.yes))) {
+          return 130
+        }
+        const result = await service.deleteThreads(ids, { trashWorkingDirectories: [] })
+        return printResult('delete', result, Boolean(options.json), preview)
+      })
     })
 
   try {

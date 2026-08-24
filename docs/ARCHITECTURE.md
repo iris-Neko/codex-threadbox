@@ -27,7 +27,7 @@ The renderer cannot supply SQL, arbitrary IPC channels, catalog hosts, or direct
 
 ## CLI host
 
-The `codex-threadbox` npm package installs the `threadbox` command and requires Node.js 22.13 or newer. It supports a prompt-based interactive manager and explicit script commands. `--json` uses a stable `schemaVersion: 1` envelope and never emits ANSI or progress animation.
+The `codex-threadbox` npm package installs the `threadbox` command and requires Node.js 22.13 or newer. It supports a prompt-based interactive manager and explicit script commands. Internal spawned tasks are hidden by default, and deletion preview uses the same refreshed protection and parent-child resolution as permanent deletion. `--json` uses a stable `schemaVersion: 1` envelope and never emits ANSI or progress animation.
 
 The CLI accepts task IDs only for mutations. It does not contain the desktop Recents or directory Trash adapters and has no parameter, including a hidden one, that recursively deletes a working directory.
 

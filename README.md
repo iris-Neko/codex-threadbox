@@ -89,7 +89,7 @@ npm install -g codex-threadbox
 threadbox
 ```
 
-Running `threadbox` in a TTY opens the interactive manager. Scriptable commands are `status`, `list`, `archive`, `unarchive`, `pin`, `unpin`, and `delete`. Mutations accept only explicit task IDs. Non-interactive deletion requires `--yes`; use `--json` for the stable `schemaVersion: 1` output contract.
+Running `threadbox` in a TTY opens the interactive manager. Scriptable commands are `status`, `list`, `archive`, `unarchive`, `pin`, `unpin`, and `delete`. `list` hides spawned internal tasks by default; pass `--include-spawned` to include them. Mutations accept only explicit task IDs. Use `delete --dry-run ID...` to inspect root tasks, spawned descendants, and protected items without making changes. Non-interactive deletion requires `--yes`; use `--json` for the stable `schemaVersion: 1` output contract.
 
 ## VS Code install
 

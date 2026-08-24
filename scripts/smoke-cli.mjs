@@ -41,13 +41,36 @@ try {
     throw new Error(`CLI list smoke failed: ${list.stdout}\n${list.stderr}`)
   }
 
+  const defaultList = parsed(run(['list']))
+  const spawnedList = parsed(run(['list', '--include-spawned']))
+  if (defaultList.records.length !== 3 || defaultList.records.some((record) => record.internal) ||
+      spawnedList.records.length !== 4 || !spawnedList.records.some((record) => record.internal)) {
+    throw new Error('CLI spawned-task visibility did not match the requested mode.')
+  }
+
+  const invalidLanguage = run(['--lang', 'fr', 'status'])
+  if (invalidLanguage.status !== 2 || parsed(invalidLanguage).success !== false) {
+    throw new Error('Invalid CLI language did not return a usage error.')
+  }
+
+  const parent = '019f0000-0000-7000-8000-000000000001'
+  const child = '019f0000-0000-7000-8000-000000000002'
+  const beforeDryRun = (await readFile(logPath, 'utf8')).trim().split(/\r?\n/).map(JSON.parse)
+  const dryRun = run(['delete', '--dry-run', parent, child])
+  const dryRunOutput = parsed(dryRun)
+  const afterDryRun = (await readFile(logPath, 'utf8')).trim().split(/\r?\n/).map(JSON.parse)
+    .slice(beforeDryRun.length)
+  if (dryRun.status !== 0 || dryRunOutput.dryRun !== true ||
+      dryRunOutput.preview.roots[0]?.id !== parent || dryRunOutput.preview.cascadedCount !== 1 ||
+      afterDryRun.some((request) => request.method === 'thread/delete')) {
+    throw new Error(`CLI dry-run smoke failed: ${dryRun.stdout}\n${dryRun.stderr}`)
+  }
+
   const noConfirmation = run(['delete', '019f0000-0000-7000-8000-000000000001'])
   if (noConfirmation.status !== 2 || parsed(noConfirmation).success !== false) {
     throw new Error('Non-TTY deletion did not require --yes.')
   }
 
-  const parent = '019f0000-0000-7000-8000-000000000001'
-  const child = '019f0000-0000-7000-8000-000000000002'
   const deletion = run(['delete', '--yes', parent, child])
   const deleted = parsed(deletion)
   if (deletion.status !== 0 || deleted.result.cascadedCount !== 1 ||
@@ -62,6 +85,16 @@ try {
   if (partial.status !== 1 || partialResult.success !== false ||
       partialResult.result.failed.length !== 1 || partialResult.result.succeeded.length !== 1) {
     throw new Error(`CLI partial-failure smoke failed: ${partial.stdout}\n${partial.stderr}`)
+  }
+
+  const changedState = run(['delete', '--yes', parent], {
+    THREADBOX_FAKE_ACTIVATE_CHILD_AFTER_PREVIEW: '1'
+  })
+  const changedStateResult = parsed(changedState)
+  if (changedState.status !== 1 || changedStateResult.preview.roots[0]?.id !== parent ||
+      changedStateResult.result.succeeded.length !== 0 ||
+      changedStateResult.result.skipped[0]?.id !== parent) {
+    throw new Error(`CLI state revalidation smoke failed: ${changedState.stdout}\n${changedState.stderr}`)
   }
 
   const requests = (await readFile(logPath, 'utf8')).trim().split(/\r?\n/).map(JSON.parse)

@@ -1,0 +1,134 @@
+name: Release npm CLI
+
+on:
+  push:
+    tags:
+      - 'cli-v*'
+
+env:
+  NODE_VERSION: 24.15.0
+
+jobs:
+  test:
+    name: npm CLI (${{ matrix.os }})
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - if: runner.os != 'Windows'
+        run: chmod +x tests/fixtures/bin/codex
+      - name: Verify tag matches CLI version
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./packages/cli/package.json').version")
+          test "$GITHUB_REF_NAME" = "cli-v$VERSION"
+      - run: npm run test:cli
+      - run: npm run test:cli-package
+      - run: npm run test:integration
+
+  package:
+    name: Package npm CLI
+    needs: test
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build:cli
+      - name: Pack npm package
+        run: |
+          mkdir -p dist
+          npm pack --workspace=codex-threadbox --pack-destination dist --json > dist/npm-pack.json
+          node -e "const p=require('./dist/npm-pack.json');if(p.length!==1||!p[0].filename)process.exit(1)"
+          rm dist/npm-pack.json
+          cd dist
+          sha256sum *.tgz > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-package
+          if-no-files-found: error
+          path: |
+            dist/*.tgz
+            dist/SHA256SUMS.txt
+
+  draft-release:
+    name: Create draft GitHub Release
+    needs: package
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: cli-package
+          path: release-artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: release-artifacts/*
+
+  publish:
+    name: Publish and verify npm package
+    needs: [package, draft-release]
+    permissions:
+      contents: read
+      id-token: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@v4
+        with:
+          name: cli-package
+          path: release-artifacts
+      - name: Publish npm package
+        run: npm publish "$(find release-artifacts -maxdepth 1 -name '*.tgz' -print -quit)" --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Verify published package
+        run: |
+          chmod +x tests/fixtures/bin/codex
+          VERSION=$(node -p "require('./packages/cli/package.json').version")
+          for ATTEMPT in $(seq 1 12); do
+            npm view "codex-threadbox@$VERSION" version >/dev/null 2>&1 && break
+            test "$ATTEMPT" -lt 12
+            sleep 10
+          done
+          test "$(npx --yes codex-threadbox@$VERSION --version)" = "$VERSION"
+          INSTALL_ROOT=$(mktemp -d)
+          npm install --prefix "$INSTALL_ROOT" --ignore-scripts "codex-threadbox@$VERSION"
+          node "$INSTALL_ROOT/node_modules/codex-threadbox/dist/threadbox.cjs" \
+            --codex-binary "$GITHUB_WORKSPACE/tests/fixtures/bin/codex" --json list > published-smoke.json
+          node -e "const r=require('./published-smoke.json');if(r.schemaVersion!==1||r.records.length!==3||r.records.some(x=>x.internal))process.exit(1)"
+        env:
+          THREADBOX_TEST_DISABLE_PROCESS_SCAN: '1'
+
+  finalize-release:
+    name: Publish GitHub Release
+    needs: publish
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
+        env:
+          GH_TOKEN: ${{ github.token }}

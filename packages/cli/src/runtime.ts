@@ -4,6 +4,7 @@ import {
   CodexRuntime,
   ThreadService
 } from '../../core/src/index'
+import { CLI_VERSION } from './version'
 
 export interface CliRuntimeOptions {
   codexBinary?: string
@@ -24,7 +25,7 @@ export function createCliRuntime(options: CliRuntimeOptions): {
   const client = new AppServerClient(runtime, {
     name: 'codex_threadbox_cli',
     title: 'Threadbox CLI',
-    version: '0.3.0'
+    version: CLI_VERSION
   })
   return { runtime, client, service: new ThreadService(client) }
 }

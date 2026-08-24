@@ -1,8 +1,9 @@
 import { checkbox, confirm, input, select, Separator } from '@inquirer/prompts'
-import type { BatchOperationResult, ThreadRecord } from '../../../src/shared/contracts'
+import type { BatchOperationResult, DeletePreview, ThreadRecord } from '../../../src/shared/contracts'
 import type { ThreadService } from '../../core/src/thread-service'
 import {
   DEFAULT_FILTERS,
+  directoryKey,
   filterThreads,
   groupThreads,
   resolveThreadSelection,
@@ -26,6 +27,7 @@ interface InteractiveCopy {
   selectTasks: string
   typeDelete: string
   done(result: BatchOperationResult): string
+  preview(value: DeletePreview): string
 }
 
 function copy(language: string): InteractiveCopy {
@@ -42,7 +44,8 @@ function copy(language: string): InteractiveCopy {
       noTasks: '当前筛选没有可操作任务。',
       selectTasks: '选择任务',
       typeDelete: '输入 DELETE 确认永久删除',
-      done: (result) => `完成 ${result.succeeded.length}，失败 ${result.failed.length}，跳过 ${result.skipped.length}`
+      done: (result) => `完成 ${result.succeeded.length}，失败 ${result.failed.length}，跳过 ${result.skipped.length}`,
+      preview: (value) => `将删除 ${value.roots.length} 个根任务及 ${value.cascadedCount} 个派生任务，跳过 ${value.skipped.length} 个。`
     }
   }
   return {
@@ -57,7 +60,8 @@ function copy(language: string): InteractiveCopy {
     noTasks: 'No actionable tasks match the current filter.',
     selectTasks: 'Select tasks',
     typeDelete: 'Type DELETE to confirm permanent deletion',
-    done: (result) => `Completed ${result.succeeded.length}, failed ${result.failed.length}, skipped ${result.skipped.length}`
+    done: (result) => `Completed ${result.succeeded.length}, failed ${result.failed.length}, skipped ${result.skipped.length}`,
+    preview: (value) => `Will delete ${value.roots.length} root task(s) and ${value.cascadedCount} spawned task(s); ${value.skipped.length} skipped.`
   }
 }
 
@@ -82,15 +86,16 @@ function taskChoices(
   const groups = groupMode === 'workspace'
     ? groupThreads(allThreads)
     : [...allThreads.reduce((directories, thread) => {
-        const existing = directories.get(thread.cwd) ?? []
-        existing.push(thread)
-        directories.set(thread.cwd, existing)
+        const key = directoryKey(thread.cwd)
+        const existing = directories.get(key) ?? { name: thread.cwd, threads: [] }
+        existing.threads.push(thread)
+        directories.set(key, existing)
         return directories
-      }, new Map<string, ThreadRecord[]>()).entries()].map(([name, threads]) => ({
-      id: name,
-      name,
+      }, new Map<string, { name: string; threads: ThreadRecord[] }>()).entries()].map(([id, group]) => ({
+      id,
+      name: group.name,
       kind: 'workspace' as const,
-      threads
+      threads: group.threads
     }))
   for (const group of groups) {
     const groupThreadsVisible = group.threads.filter(
@@ -129,19 +134,27 @@ export async function runInteractive(service: ThreadService, language: string): 
   let archive: ArchiveFilter = 'all'
   let showSpawned = false
   let groupMode: GroupMode = 'workspace'
+  let listed = await service.listThreads()
 
   process.stdout.write(`${t.manager}\n`)
   for (;;) {
-    const listed = await service.listThreads()
     const visible = filterThreads(listed.threads, { ...DEFAULT_FILTERS, query, archive })
+    const displayed = visible.filter((thread) => showSpawned || !thread.internal)
+    const mutationChoices = [
+      { name: `Archive (${displayed.filter((thread) => eligible(thread, 'archive')).length})`, value: 'archive' },
+      { name: `Unarchive (${displayed.filter((thread) => eligible(thread, 'unarchive')).length})`, value: 'unarchive' },
+      ...(listed.environment.capabilities.pinning
+        ? [
+            { name: `Pin (${displayed.filter((thread) => eligible(thread, 'pin')).length})`, value: 'pin' },
+            { name: `Unpin (${displayed.filter((thread) => eligible(thread, 'unpin')).length})`, value: 'unpin' }
+          ]
+        : []),
+      { name: `Delete (${displayed.filter((thread) => eligible(thread, 'delete')).length})`, value: 'delete' }
+    ]
     const action = await select<string>({
       message: t.action,
       choices: [
-        { name: `Archive (${visible.filter((thread) => eligible(thread, 'archive')).length})`, value: 'archive' },
-        { name: `Unarchive (${visible.filter((thread) => eligible(thread, 'unarchive')).length})`, value: 'unarchive' },
-        { name: `Pin (${visible.filter((thread) => eligible(thread, 'pin')).length})`, value: 'pin' },
-        { name: `Unpin (${visible.filter((thread) => eligible(thread, 'unpin')).length})`, value: 'unpin' },
-        { name: `Delete (${visible.filter((thread) => eligible(thread, 'delete')).length})`, value: 'delete' },
+        ...mutationChoices,
         new Separator(),
         { name: `${t.search}: ${query || '*'}`, value: 'search' },
         { name: `${t.state}: ${archive}`, value: 'state' },
@@ -153,7 +166,10 @@ export async function runInteractive(service: ThreadService, language: string): 
     })
 
     if (action === 'quit') return 0
-    if (action === 'refresh') continue
+    if (action === 'refresh') {
+      listed = await service.listThreads()
+      continue
+    }
     if (action === 'search') {
       query = await input({ message: t.search, default: query })
       continue
@@ -187,7 +203,18 @@ export async function runInteractive(service: ThreadService, language: string): 
     const ids = await checkbox<string>({ message: t.selectTasks, choices, pageSize: 18 })
     if (ids.length === 0) continue
     const selection = resolveThreadSelection(listed.threads, ids)
+    const selectedIds = [...(mutation === 'delete' ? selection.roots : selection.effective)]
     if (mutation === 'delete') {
+      const preview = await service.previewDeleteThreads(selectedIds)
+      process.stdout.write(`${t.preview(preview)}\n`)
+      for (const root of preview.roots) {
+        const descendants = root.descendantCount > 0 ? ` (+${root.descendantCount})` : ''
+        process.stdout.write(`- ${root.title} [${root.id}] ${root.cwd}${descendants}\n`)
+      }
+      for (const skipped of preview.skipped) {
+        process.stderr.write(`${skipped.id}: ${skipped.message}\n`)
+      }
+      if (preview.roots.length === 0) continue
       const confirmation = await input({ message: t.typeDelete })
       if (confirmation !== 'DELETE') continue
     } else if (!await confirm({ message: `${mutation} ${selection.effective.size} task(s)?`, default: false })) {
@@ -196,7 +223,7 @@ export async function runInteractive(service: ThreadService, language: string): 
     const result = await mutate(
       service,
       mutation,
-      [...(mutation === 'delete' ? selection.roots : selection.effective)]
+      selectedIds
     )
     process.stdout.write(`${t.done(result)}\n`)
     if (!operationSucceeded(result)) {
@@ -204,5 +231,6 @@ export async function runInteractive(service: ThreadService, language: string): 
         process.stderr.write(`${failure.id}: ${failure.message}\n`)
       }
     }
+    listed = await service.listThreads()
   }
 }

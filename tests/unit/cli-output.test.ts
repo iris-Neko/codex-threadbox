@@ -1,11 +1,14 @@
 // @vitest-environment node
 
 import { describe, expect, it } from 'vitest'
+import stringWidth from 'string-width'
 import {
   filterList,
+  formatThreadTable,
   listEnvelope,
   listFilters,
   operationSucceeded,
+  previewEnvelope,
   resultEnvelope,
   statusEnvelope
 } from '../../packages/cli/src/output'
@@ -57,6 +60,11 @@ describe('CLI output contract', () => {
     expect(() => listFilters({ sort: 'random' })).toThrow(/Sort must be/)
     expect(filterList([thread], { search: 'workspace/release' })).toEqual([thread])
     expect(filterList([thread], { state: 'archived' })).toEqual([])
+    expect(filterList([{ ...thread, id: 'spawned', internal: true }], {})).toEqual([])
+    expect(filterList([{ ...thread, id: 'spawned', internal: true }], { includeSpawned: true }))
+      .toHaveLength(1)
+    expect(filterList([{ ...thread, cwd: 'C:\\Work\\Demo\\' }], { cwd: 'c:/work/demo' }))
+      .toHaveLength(1)
   })
 
   it('emits stable schemaVersion 1 envelopes', () => {
@@ -77,6 +85,28 @@ describe('CLI output contract', () => {
       success: true,
       result: success
     })
+    expect(previewEnvelope('delete', {
+      requestedIds: ['one'],
+      roots: [{ id: 'one', title: 'Release review', cwd: '/workspace/release', descendantCount: 0 }],
+      skipped: [],
+      cascadedCount: 0,
+      refreshedAt: 1
+    })).toMatchObject({ schemaVersion: 1, command: 'delete', success: true, dryRun: true })
+  })
+
+  it('keeps Unicode table columns aligned', () => {
+    const table = formatThreadTable([
+      thread,
+      { ...thread, id: 'two', title: '清理旧任务记录', cwd: 'C:\\工作区\\线程管理器' }
+    ], 120)
+    const lines = table.split('\n')
+    expect(lines).toHaveLength(3)
+    const sourceOffsets = lines.map((line, index) => {
+      const marker = index === 0 ? 'SOURCE' : 'cli'
+      return stringWidth(line.slice(0, line.indexOf(marker)))
+    })
+    expect(new Set(sourceOffsets).size).toBe(1)
+    expect(lines[2]).toContain('清理旧任务记录')
   })
 
   it('treats skipped and failed items as a partial failure', () => {

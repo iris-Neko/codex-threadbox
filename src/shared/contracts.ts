@@ -80,6 +80,21 @@ export interface BatchOperationResult {
   desktopRecentsCleanup?: DesktopRecentsCleanupResult
 }
 
+export interface DeletePreviewRoot {
+  id: string
+  title: string
+  cwd: string
+  descendantCount: number
+}
+
+export interface DeletePreview {
+  requestedIds: string[]
+  roots: DeletePreviewRoot[]
+  skipped: OperationFailure[]
+  cascadedCount: number
+  refreshedAt: number
+}
+
 export interface WorkingDirectoryIssue {
   path: string
   message: string

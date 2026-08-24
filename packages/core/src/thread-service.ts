@@ -1,5 +1,6 @@
 import type {
   BatchOperationResult,
+  DeletePreview,
   DeleteThreadsOptions,
   DesktopRecentsCleanupResult,
   DesktopRecentsRepairResult,
@@ -154,27 +155,8 @@ export class ThreadService {
     ids: string[],
     options: DeleteThreadsOptions = { trashWorkingDirectories: [] }
   ): Promise<BatchOperationResult> {
-    const requested = new Set(ids)
-    const { entries, pinnedIds } = await this.inventory()
-    const byId = new Map(entries.map((entry) => [entry.thread.id, entry]))
-    const children = this.buildChildren(entries)
-    const skipped: BatchOperationResult['skipped'] = []
-
-    for (const id of requested) {
-      const entry = byId.get(id)
-      if (!entry) {
-        skipped.push({ id, message: 'Thread was not found.' })
-      } else if (safeStatus(entry.thread) === 'active') {
-        skipped.push({ id, message: 'Active threads cannot be deleted.' })
-      } else if (pinnedIds.has(id)) {
-        skipped.push({ id, message: 'Pinned threads must be unpinned before deletion.' })
-      }
-    }
-
-    const eligible = new Set(
-      [...requested].filter((id) => byId.has(id) && !skipped.some((item) => item.id === id))
-    )
-    const roots = [...eligible].filter((id) => !this.hasSelectedAncestor(id, eligible, byId))
+    const prepared = await this.prepareDelete(ids)
+    const { entries, children, eligible, roots, preview } = prepared
     const result = await this.runBatch('thread/delete', roots)
     const deletedIds = new Set<string>()
     const cascaded = new Set<string>()
@@ -203,12 +185,16 @@ export class ThreadService {
 
     return {
       ...result,
-      skipped,
+      skipped: preview.skipped,
       cascadedCount: cascaded.size,
       refreshedAt: Date.now(),
       directoryCleanup,
       desktopRecentsCleanup
     }
+  }
+
+  async previewDeleteThreads(ids: string[]): Promise<DeletePreview> {
+    return (await this.prepareDelete(ids)).preview
   }
 
   async archiveThreads(ids: string[]): Promise<BatchOperationResult> {
@@ -323,6 +309,79 @@ export class ThreadService {
 
     const result = await this.runBatch(method, eligible)
     return { ...result, skipped, cascadedCount: 0, refreshedAt: Date.now() }
+  }
+
+  private async prepareDelete(ids: string[]): Promise<{
+    entries: InventoryEntry[]
+    children: Map<string, string[]>
+    eligible: Set<string>
+    roots: string[]
+    preview: DeletePreview
+  }> {
+    const requestedIds = [...new Set(ids)]
+    const { entries, pinnedIds } = await this.inventory()
+    const byId = new Map(entries.map((entry) => [entry.thread.id, entry]))
+    const children = this.buildChildren(entries)
+    const skipped: DeletePreview['skipped'] = []
+    const candidates = new Set<string>()
+
+    for (const id of requestedIds) {
+      const entry = byId.get(id)
+      if (!entry) skipped.push({ id, message: 'Thread was not found.' })
+      else if (safeStatus(entry.thread) === 'active') {
+        skipped.push({ id, message: 'Active threads cannot be deleted.' })
+      } else if (pinnedIds.has(id)) {
+        skipped.push({ id, message: 'Pinned threads must be unpinned before deletion.' })
+      } else candidates.add(id)
+    }
+
+    let roots: string[]
+    for (;;) {
+      roots = [...candidates].filter((id) => !this.hasSelectedAncestor(id, candidates, byId))
+      const blocked = roots.find((id) => {
+        for (const descendant of this.descendantsOf(id, children)) {
+          const entry = byId.get(descendant)
+          if (entry && (safeStatus(entry.thread) === 'active' || pinnedIds.has(descendant))) return true
+        }
+        return false
+      })
+      if (!blocked) break
+      const protectedDescendant = [...this.descendantsOf(blocked, children)].find((id) => {
+        const entry = byId.get(id)
+        return entry && (safeStatus(entry.thread) === 'active' || pinnedIds.has(id))
+      })
+      candidates.delete(blocked)
+      skipped.push({
+        id: blocked,
+        message: `A spawned descendant (${protectedDescendant}) is active or pinned.`
+      })
+    }
+
+    const cascaded = new Set<string>()
+    const previewRoots = roots.map((id) => {
+      const entry = byId.get(id)!
+      const descendants = this.descendantsOf(id, children)
+      for (const descendant of descendants) cascaded.add(descendant)
+      return {
+        id,
+        title: displayTitle(entry.thread),
+        cwd: String(entry.thread.cwd),
+        descendantCount: descendants.size
+      }
+    })
+    return {
+      entries,
+      children,
+      eligible: candidates,
+      roots,
+      preview: {
+        requestedIds,
+        roots: previewRoots,
+        skipped,
+        cascadedCount: cascaded.size,
+        refreshedAt: Date.now()
+      }
+    }
   }
 
   private async runBatch(method: BatchMethod, ids: string[]): Promise<{

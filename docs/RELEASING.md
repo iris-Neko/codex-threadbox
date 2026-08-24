@@ -1,21 +1,29 @@
 # Releasing
 
-The historical `v0.3.0` release contained desktop installers, `codex-threadbox-0.3.0.tgz`, one cross-platform VSIX, and `SHA256SUMS.txt`. Desktop/CLI `v<semver>` tags now start `.github/workflows/release.yml`; that workflow no longer publishes the extension marketplaces.
+Desktop, npm CLI, and VS Code releases are versioned independently.
 
-VS Code-only releases use `vscode-v<version>` tags and `.github/workflows/release-vscode.yml`. For example, `vscode-v0.4.0` packages and publishes only `threadbox-for-codex-0.4.0.vsix`; desktop and npm CLI versions remain unchanged.
+- Desktop tags use `v<version>` and `.github/workflows/release.yml`.
+- npm CLI tags use `cli-v<version>` and `.github/workflows/release-cli.yml`.
+- VS Code tags use `vscode-v<version>` and `.github/workflows/release-vscode.yml`.
 
-The workflow builds and tests everything before creating a draft GitHub Release. It then publishes npm, VS Code Marketplace, and Open VSX in sequence. GitHub remains a draft unless all three registries succeed.
+Each workflow verifies its tag against the matching package manifest. A desktop release contains only platform installers. A CLI release contains the npm `.tgz` and `SHA256SUMS.txt`. A VS Code release contains only the cross-platform VSIX and its checksum.
 
 ## Account-owner checkpoints
 
 The account owner must complete actions that cannot be delegated safely:
 
-1. Sign in to npm, accept current terms and 2FA requirements, and authorize a granular automation token that can publish the new unscoped `codex-threadbox` package.
+1. Sign in to npm, accept current terms and 2FA requirements, and authorize a granular automation token that can publish the unscoped `codex-threadbox` package.
 2. Create or confirm the VS Code Marketplace publisher `irisNeko`, accept publisher agreements, and authorize a Marketplace `Manage` token.
 3. Sign in to Open VSX, create or claim the `irisNeko` namespace, accept its publisher agreement, and authorize a publishing token.
 
-After the user completes those checkpoints, the release operator writes the resulting values to repository Actions secrets named `NPM_TOKEN`, `VSCE_PAT`, and `OVSX_PAT`. Do not put tokens in files, issues, logs, commits, or command arguments.
+Repository Actions secrets are named `NPM_TOKEN`, `VSCE_PAT`, and `OVSX_PAT`. Never put tokens in files, issues, logs, commits, or command arguments.
 
-Before tagging, verify `npm view codex-threadbox` still returns not found, all repository secrets are present, CI is green on `main`, and package versions are `0.3.0`. Create and push `v0.3.0` only after those checks.
+## npm CLI release
 
-For a VS Code-only release, verify the extension manifest version matches the tag, `VSCE_PAT` and `OVSX_PAT` are available (or manually publish Marketplace before rerunning without `VSCE_PAT`), and CI is green. The GitHub Release remains a draft until both Marketplace and Open VSX contain the new version.
+Before tagging, verify CI is green, `packages/cli/package.json` contains the intended version, and that version is not already present on npm. Push `cli-v<version>` only after those checks.
+
+The workflow tests the CLI on Windows, macOS, and Linux, installs the packed artifact, creates a draft GitHub Release, publishes npm with provenance, and verifies the installed registry package against the fake App Server. The GitHub Release remains a draft if npm publishing or verification fails.
+
+## VS Code release
+
+Verify the extension manifest version matches the tag and the Marketplace credentials are available. The workflow publishes the same VSIX to VS Code Marketplace and Open VSX. The GitHub Release remains a draft until both registries contain the new version.

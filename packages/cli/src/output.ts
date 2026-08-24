@@ -1,5 +1,7 @@
+import stringWidth from 'string-width'
 import type {
   BatchOperationResult,
+  DeletePreview,
   EnvironmentStatus,
   ThreadRecord
 } from '../../../src/shared/contracts'
@@ -12,6 +14,7 @@ export interface ListOptions {
   cwd?: string
   search?: string
   sort?: string
+  includeSpawned?: boolean
 }
 
 export interface JsonEnvelope {
@@ -21,6 +24,8 @@ export interface JsonEnvelope {
   environment?: EnvironmentStatus
   records?: ThreadRecord[]
   result?: BatchOperationResult
+  preview?: DeletePreview
+  dryRun?: true
   error?: { message: string }
 }
 
@@ -53,14 +58,26 @@ export function listFilters(options: ListOptions): ThreadFilters {
 
 export function filterList(threads: ThreadRecord[], options: ListOptions): ThreadRecord[] {
   return filterThreads(threads, listFilters(options))
+    .filter((thread) => options.includeSpawned || !thread.internal)
 }
 
 function clip(value: string, width: number): string {
-  if (value.length <= width) return value.padEnd(width)
-  return `${value.slice(0, Math.max(1, width - 3))}...`
+  if (stringWidth(value) <= width) return `${value}${' '.repeat(width - stringWidth(value))}`
+  const target = Math.max(1, width - 3)
+  let clipped = ''
+  const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+  for (const { segment } of segmenter.segment(value)) {
+    if (stringWidth(clipped + segment) > target) break
+    clipped += segment
+  }
+  const result = `${clipped}...`
+  return `${result}${' '.repeat(Math.max(0, width - stringWidth(result)))}`
 }
 
-export function formatThreadTable(threads: ThreadRecord[]): string {
+export function formatThreadTable(
+  threads: ThreadRecord[],
+  terminalWidth = process.stdout.columns ?? 160
+): string {
   const headers = ['STATE', 'TITLE', 'SOURCE', 'UPDATED', 'ID', 'CWD']
   const rows = threads.map((thread) => [
     thread.status === 'active'
@@ -76,7 +93,11 @@ export function formatThreadTable(threads: ThreadRecord[]): string {
     thread.id,
     thread.cwd
   ])
-  const widths = [9, 30, 14, 24, 36, 40]
+  const fixedWidths = terminalWidth >= 145 ? [9, 14, 24, 36] : [9, 12, 19, 12]
+  const flexible = Math.max(36, terminalWidth - fixedWidths.reduce((sum, width) => sum + width, 0) - 10)
+  const titleWidth = Math.min(36, Math.max(16, Math.floor(flexible * 0.45)))
+  const cwdWidth = Math.min(60, Math.max(20, flexible - titleWidth))
+  const widths = [fixedWidths[0]!, titleWidth, fixedWidths[1]!, fixedWidths[2]!, fixedWidths[3]!, cwdWidth]
   return [headers, ...rows]
     .map((row) => row.map((value, index) => clip(value, widths[index] ?? 20)).join('  ').trimEnd())
     .join('\n')
@@ -106,9 +127,20 @@ export function listEnvelope(
 export function resultEnvelope(
   command: string,
   success: boolean,
-  result: BatchOperationResult
+  result: BatchOperationResult,
+  preview?: DeletePreview
 ): JsonEnvelope {
-  return { schemaVersion: 1, command, success, result }
+  return { schemaVersion: 1, command, success, result, ...(preview ? { preview } : {}) }
+}
+
+export function previewEnvelope(command: string, preview: DeletePreview): JsonEnvelope {
+  return {
+    schemaVersion: 1,
+    command,
+    success: preview.skipped.length === 0 && preview.roots.length > 0,
+    preview,
+    dryRun: true
+  }
 }
 
 export function errorEnvelope(command: string, message: string): JsonEnvelope {

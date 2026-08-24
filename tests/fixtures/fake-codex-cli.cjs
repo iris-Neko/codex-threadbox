@@ -125,6 +125,7 @@ function log(message) {
 }
 
 log({ event: 'server-start', pid: process.pid })
+let activeListRequests = 0
 
 readline.createInterface({ input: process.stdin }).on('line', (line) => {
   let message
@@ -138,10 +139,17 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
     send({ id: message.id, result: { userAgent: 'fake-codex' } })
   } else if (message.method === 'thread/list') {
     if (process.env.THREADBOX_FAKE_HANG === '1') return
+    if (!message.params.archived && !message.params.isPinned) activeListRequests += 1
+    const activeData =
+      process.env.THREADBOX_FAKE_ACTIVATE_CHILD_AFTER_PREVIEW === '1' && activeListRequests > 1
+        ? active.map((item) => item.id === '019f0000-0000-7000-8000-000000000002'
+            ? { ...item, status: { type: 'active', activeFlags: [] } }
+            : item)
+        : active
     send({
       id: message.id,
       result: {
-        data: message.params.archived ? archived : active,
+        data: message.params.archived ? archived : activeData,
         nextCursor: null,
         backwardsCursor: null
       }

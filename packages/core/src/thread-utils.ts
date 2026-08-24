@@ -62,10 +62,14 @@ function directoryName(path: string): string {
   return trimmed.split(/[\\/]/).filter(Boolean).at(-1) ?? path
 }
 
-function directoryKey(path: string): string {
+export function directoryKey(path: string): string {
   const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '')
   const windowsStyle = /^[a-z]:\//i.test(normalized) || normalized.startsWith('//')
   return windowsStyle ? normalized.toLocaleLowerCase() : normalized
+}
+
+export function sameDirectory(left: string, right: string): boolean {
+  return directoryKey(left) === directoryKey(right)
 }
 
 export function owningThread(thread: ThreadRecord, byId: Map<string, ThreadRecord>): ThreadRecord {
@@ -348,7 +352,7 @@ export function filterThreads(
     if (filters.archive === 'active' && thread.archived) return false
     if (filters.archive === 'archived' && !thread.archived) return false
     if (filters.source !== 'all' && thread.source !== filters.source) return false
-    if (filters.directory !== 'all' && thread.cwd !== filters.directory) return false
+    if (filters.directory !== 'all' && !sameDirectory(thread.cwd, filters.directory)) return false
     if (filters.workspace === '__current__') {
       const cwd = directoryKey(thread.cwd)
       const current = currentWorkspaceDirectories.some((directory) => {

@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { access, mkdtemp, rm } from 'node:fs/promises'
+import { access, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { delimiter, join, resolve } from 'node:path'
 
@@ -40,7 +40,10 @@ try {
     installation, 'node_modules', 'codex-threadbox', 'dist', 'threadbox.cjs'
   )
   const version = run(process.execPath, [executable, '--version'])
-  if (version.stdout.trim() !== '0.3.0') throw new Error('Installed package returned the wrong version.')
+  const packageMetadata = JSON.parse(await readFile(resolve('packages/cli/package.json'), 'utf8'))
+  if (version.stdout.trim() !== packageMetadata.version) {
+    throw new Error('Installed package returned the wrong version.')
+  }
 
   const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === 'path') ?? 'PATH'
   const listed = run(process.execPath, [executable,
@@ -53,7 +56,8 @@ try {
     }
   })
   const output = JSON.parse(listed.stdout)
-  if (output.schemaVersion !== 1 || output.records.length !== 4) {
+  if (output.schemaVersion !== 1 || output.records.length !== 3 ||
+      output.records.some((record) => record.internal)) {
     throw new Error('Installed npm package did not list fake tasks.')
   }
   process.stdout.write('Packed npm CLI installation smoke test passed.\n')

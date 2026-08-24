@@ -189,6 +189,41 @@ describe('ThreadService', () => {
     ).toEqual(['parent'])
   })
 
+  it('previews root deletion and blocks a parent with a protected descendant', async () => {
+    const parent = thread('parent', { name: 'Parent task', cwd: '/workspace/parent' })
+    const child = thread('child', {
+      parentThreadId: 'parent',
+      status: { type: 'active', activeFlags: [] }
+    })
+    const client = new FakeClient([parent, child], [])
+    const service = new ThreadService(client)
+
+    const preview = await service.previewDeleteThreads(['parent', 'child', 'missing'])
+    expect(preview.requestedIds).toEqual(['parent', 'child', 'missing'])
+    expect(preview.roots).toEqual([])
+    expect(preview.skipped.map((item) => item.id).toSorted()).toEqual(['child', 'missing', 'parent'])
+    expect(client.calls.some((call) => call.method === 'thread/delete')).toBe(false)
+  })
+
+  it('revalidates protected descendants after a deletion preview', async () => {
+    const parent = thread('parent', { name: 'Parent task' })
+    const child = thread('child', { parentThreadId: 'parent' })
+    const client = new FakeClient([parent, child], [])
+    const service = new ThreadService(client)
+
+    const preview = await service.previewDeleteThreads(['parent'])
+    expect(preview.roots.map((item) => item.id)).toEqual(['parent'])
+    expect(preview.cascadedCount).toBe(1)
+
+    child.status = { type: 'active', activeFlags: [] }
+    const result = await service.deleteThreads(['parent'])
+    expect(result.succeeded).toEqual([])
+    expect(result.skipped).toEqual([
+      { id: 'parent', message: 'A spawned descendant (child) is active or pinned.' }
+    ])
+    expect(client.calls.some((call) => call.method === 'thread/delete')).toBe(false)
+  })
+
   it('continues a batch after an individual failure', async () => {
     const client = new FakeClient([thread('one'), thread('two')], [])
     client.failDeleteId = 'one'

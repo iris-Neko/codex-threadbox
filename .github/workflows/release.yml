@@ -1,4 +1,4 @@
-name: Release
+name: Release Desktop
 
 on:
   push:
@@ -34,6 +34,11 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - run: npm ci
+      - name: Verify tag matches desktop version
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          test "$GITHUB_REF_NAME" = "v$VERSION"
       - run: npm run verify
       - run: npm run dist -- ${{ matrix.args }} --publish never
         env:
@@ -49,42 +54,9 @@ jobs:
             dist/*.AppImage
             dist/*.deb
 
-  packages:
-    name: npm package
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-      - run: npm ci
-      - if: runner.os != 'Windows'
-        run: chmod +x tests/fixtures/bin/codex
-      - run: npm run test:cli
-      - run: npm run test:cli-package
-      - run: npm run test:integration
-      - if: runner.os == 'Linux'
-        run: xvfb-run -a npm run test:vscode
-      - if: runner.os == 'Linux'
-        run: npm pack --workspace=codex-threadbox --pack-destination dist
-      - if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v4
-        with:
-          name: distribution-packages
-          if-no-files-found: error
-          path: |
-            dist/codex-threadbox-0.3.0.tgz
-
   draft-release:
     name: Create draft GitHub Release
-    needs: [desktop, packages]
+    needs: desktop
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -102,31 +74,9 @@ jobs:
           generate_release_notes: true
           files: release-artifacts/*
 
-  publish:
-    name: Publish npm package
-    needs: [packages, draft-release]
-    permissions:
-      contents: read
-      id-token: write
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          registry-url: https://registry.npmjs.org
-      - uses: actions/download-artifact@v4
-        with:
-          name: distribution-packages
-          path: release-artifacts
-      - name: Publish npm package
-        run: npm publish release-artifacts/codex-threadbox-0.3.0.tgz --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
   finalize-release:
     name: Publish GitHub Release
-    needs: publish
+    needs: draft-release
     permissions:
       contents: write
     runs-on: ubuntu-latest

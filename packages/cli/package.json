@@ -1,6 +1,6 @@
 {
   "name": "codex-threadbox",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Headless task manager for Codex App Server.",
   "license": "MIT",
   "author": "irisNeko",
@@ -35,7 +35,8 @@
   },
   "dependencies": {
     "@inquirer/prompts": "^8.6.0",
-    "commander": "^15.0.0"
+    "commander": "^15.0.0",
+    "string-width": "^8.2.2"
   },
   "devDependencies": {
     "esbuild": "^0.28.2"
