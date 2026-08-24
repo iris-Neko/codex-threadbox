@@ -31,7 +31,8 @@
     "workspace"
   ],
   "activationEvents": [
-    "onCommand:threadbox.openManager"
+    "onCommand:threadbox.openManager",
+    "onView:threadbox.sidebar"
   ],
   "main": "./dist/extension.cjs",
   "icon": "dist/icon.png",
@@ -40,9 +41,47 @@
       {
         "command": "threadbox.openManager",
         "title": "Open Manager",
-        "category": "Threadbox"
+        "category": "Threadbox",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "threadbox.refreshSidebar",
+        "title": "Refresh",
+        "category": "Threadbox",
+        "icon": "$(refresh)"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "threadbox",
+          "title": "Threadbox",
+          "icon": "dist/activitybar.svg"
+        }
+      ]
+    },
+    "views": {
+      "threadbox": [
+        {
+          "id": "threadbox.sidebar",
+          "name": "Codex Tasks"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "threadbox.openManager",
+          "when": "view == threadbox.sidebar",
+          "group": "navigation@1"
+        },
+        {
+          "command": "threadbox.refreshSidebar",
+          "when": "view == threadbox.sidebar",
+          "group": "navigation@2"
+        }
+      ]
+    },
     "configuration": {
       "title": "Threadbox for Codex",
       "properties": {

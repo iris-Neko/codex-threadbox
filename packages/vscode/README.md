@@ -1,6 +1,6 @@
 # Threadbox for Codex
 
-Open **Threadbox: Open Manager** to manage Codex task metadata on the current VS Code host.
+Open the Threadbox icon in the Activity Bar for Codex status, task counts, and recent tasks. Select **Open Threadbox Manager** from the sidebar, or run **Threadbox: Open Manager**, to open the full manager.
 
 The extension runs in the workspace extension host, so Remote SSH, Dev Containers, and Codespaces manage the remote host's Codex tasks. It does not read full transcripts, repair desktop Recents, delete working directories, call a model, upload data, or collect telemetry.
 

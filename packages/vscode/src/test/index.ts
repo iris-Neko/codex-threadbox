@@ -35,6 +35,9 @@ export async function run(): Promise<void> {
     assert(listed.threads.length === 4, 'VS Code did not load active and archived fake tasks.')
     const result = await api.archiveThreads(['019f0000-0000-7000-8000-000000000001'])
     assert(result.succeeded.length === 1, 'VS Code archive operation did not complete.')
+    const commands = await vscode.commands.getCommands(true)
+    assert(commands.includes('threadbox.refreshSidebar'), 'Threadbox sidebar refresh was not registered.')
+    await vscode.commands.executeCommand('threadbox.refreshSidebar')
     await vscode.commands.executeCommand('threadbox.openManager')
   } finally {
     await configuration.update('codexBinary', undefined, vscode.ConfigurationTarget.Global)

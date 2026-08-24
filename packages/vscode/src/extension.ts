@@ -10,10 +10,13 @@ import type {
   ThreadboxApi
 } from '../../../src/shared/contracts'
 import { parseRpcRequest, type RpcRequest, type RpcResponse } from './rpc'
+import { ThreadboxSidebarProvider } from './sidebar'
 import { requireWorkspaceTrust } from './workspace-trust'
 
 const CONFIGURATION = 'threadbox'
 const COMMAND = 'threadbox.openManager'
+const REFRESH_SIDEBAR_COMMAND = 'threadbox.refreshSidebar'
+const SIDEBAR_VIEW = 'threadbox.sidebar'
 
 function configuredString(name: string): string | null {
   const value = vscode.workspace.getConfiguration(CONFIGURATION).get<unknown>(name)
@@ -181,13 +184,19 @@ function webviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string 
 </html>`
 }
 
-function attachRpc(panel: vscode.WebviewPanel, api: ThreadboxApi): vscode.Disposable {
+function attachRpc(
+  panel: vscode.WebviewPanel,
+  api: ThreadboxApi,
+  onMutation: () => void
+): vscode.Disposable {
   return panel.webview.onDidReceiveMessage(async (message: unknown) => {
     const request = parseRpcRequest(message)
     if (!request) return
     let response: RpcResponse
     try {
       response = { kind: 'threadbox.response', id: request.id, ok: true, value: await dispatch(api, request) }
+      if (['deleteThreads', 'archiveThreads', 'unarchiveThreads', 'setPinned', 'updateSettings']
+        .includes(request.method)) onMutation()
     } catch (error) {
       response = {
         kind: 'threadbox.response',
@@ -207,11 +216,25 @@ export interface ThreadboxExtensionApi {
 export function activate(context: vscode.ExtensionContext): ThreadboxExtensionApi {
   const runtime = new RuntimeHost()
   const api = createApi(runtime)
+  const sidebar = new ThreadboxSidebarProvider(api, COMMAND, vscode.env.language)
+  const sidebarView = vscode.window.createTreeView(SIDEBAR_VIEW, {
+    treeDataProvider: sidebar,
+    showCollapseAll: false
+  })
   let panel: vscode.WebviewPanel | null = null
-  context.subscriptions.push(runtime)
+  context.subscriptions.push(runtime, sidebar, sidebarView)
+  context.subscriptions.push(sidebar.onDidChangeSummary((summary) => {
+    sidebarView.badge = summary.taskCount > 0
+      ? { value: summary.taskCount, tooltip: summary.tooltip }
+      : undefined
+  }))
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
     if (event.affectsConfiguration('threadbox.codexBinary') ||
       event.affectsConfiguration('threadbox.codexHome')) runtime.reset()
+    if (event.affectsConfiguration(CONFIGURATION)) sidebar.refresh()
+  }))
+  context.subscriptions.push(vscode.commands.registerCommand(REFRESH_SIDEBAR_COMMAND, () => {
+    sidebar.refresh()
   }))
   context.subscriptions.push(vscode.commands.registerCommand(COMMAND, () => {
     if (panel) {
@@ -229,11 +252,12 @@ export function activate(context: vscode.ExtensionContext): ThreadboxExtensionAp
       }
     )
     panel.webview.html = webviewHtml(panel.webview, context.extensionUri)
-    const rpc = attachRpc(panel, api)
+    const rpc = attachRpc(panel, api, () => sidebar.refresh())
     panel.onDidDispose(() => {
       rpc.dispose()
       panel = null
     })
+    sidebar.refresh()
   }))
   return { getThreadboxApi: () => api }
 }
