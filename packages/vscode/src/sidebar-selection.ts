@@ -11,7 +11,8 @@ export interface ThreadHierarchyNode extends ThreadTreeNode {
 }
 
 export function buildVisibleThreadHierarchy(threads: readonly ThreadRecord[]): ThreadHierarchyNode[] {
-  const nodes = new Map(threads.map((thread) => [thread.id, { thread, children: [] } as ThreadHierarchyNode]))
+  const visible = threads.filter((thread) => !thread.internal || thread.source === 'subAgentThreadSpawn')
+  const nodes = new Map(visible.map((thread) => [thread.id, { thread, children: [] } as ThreadHierarchyNode]))
   const roots: ThreadHierarchyNode[] = []
   for (const node of nodes.values()) {
     const parent = node.thread.parentThreadId ? nodes.get(node.thread.parentThreadId) : undefined

@@ -19,7 +19,6 @@ const COMMAND = 'threadbox.openManager'
 const REFRESH_SIDEBAR_COMMAND = 'threadbox.refreshSidebar'
 const SIDEBAR_VIEW = 'threadbox.sidebar'
 const CODEX_EXTENSION_ID = 'openai.chatgpt'
-const CODEX_CONVERSATION_EDITOR = 'chatgpt.conversationEditor'
 const SIDEBAR_COMMANDS = {
   newProject: 'threadbox.newProject',
   renameProject: 'threadbox.renameProject',
@@ -43,19 +42,19 @@ function selectedItems(primary?: SidebarItem, selection?: SidebarItem[]): Sideba
 async function openThreadInCodex(threadId: string): Promise<void> {
   const extension = vscode.extensions.getExtension(CODEX_EXTENSION_ID)
   if (!extension) throw new Error('The Codex extension is not installed on this extension host.')
-  const customEditors = (extension.packageJSON as {
-    contributes?: { customEditors?: Array<{ viewType?: unknown }> }
-  }).contributes?.customEditors
-  if (!customEditors?.some((editor) => editor.viewType === CODEX_CONVERSATION_EDITOR)) {
+  const activationEvents = (extension.packageJSON as { activationEvents?: unknown }).activationEvents
+  if (!Array.isArray(activationEvents) || !activationEvents.includes('onUri')) {
     await vscode.commands.executeCommand('chatgpt.openSidebar')
-    throw new Error('This Codex extension version cannot open a task by ID.')
+    throw new Error('This Codex extension version cannot navigate to a task in its sidebar.')
   }
-  const resource = vscode.Uri.from({
-    scheme: 'openai-codex',
-    authority: 'route',
+  const deepLink = vscode.Uri.from({
+    scheme: vscode.env.uriScheme,
+    authority: CODEX_EXTENSION_ID,
     path: `/local/${threadId}`
   })
-  await vscode.commands.executeCommand('vscode.openWith', resource, CODEX_CONVERSATION_EDITOR)
+  if (!await vscode.env.openExternal(deepLink)) {
+    throw new Error('VS Code could not open this task in the Codex sidebar.')
+  }
 }
 
 function configuredString(name: string): string | null {

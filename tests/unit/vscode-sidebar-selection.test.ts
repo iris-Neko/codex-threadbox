@@ -36,14 +36,27 @@ describe('VS Code sidebar task selection', () => {
     expect(collectThreadIds([parent, child])).toEqual(['parent', 'child'])
   })
 
-  it('folds spawned tasks under visible parents and hides orphan internal tasks', () => {
+  it('shows spawned agents under visible parents and hides system helper tasks', () => {
     const hierarchy = buildVisibleThreadHierarchy([
       thread('parent', { updatedAt: 2 }),
-      thread('child', { parentThreadId: 'parent', internal: true, updatedAt: 3 }),
-      thread('orphan', { parentThreadId: 'missing', internal: true, updatedAt: 4 })
+      thread('spawned', {
+        parentThreadId: 'parent', internal: true, source: 'subAgentThreadSpawn', updatedAt: 3
+      }),
+      thread('guardian', {
+        parentThreadId: 'parent', internal: true, source: 'subAgentOther', updatedAt: 5
+      }),
+      thread('review', {
+        parentThreadId: 'parent', internal: true, source: 'subAgentReview', updatedAt: 4
+      }),
+      thread('compact', {
+        parentThreadId: 'parent', internal: true, source: 'subAgentCompact', updatedAt: 4
+      }),
+      thread('orphan-spawned', {
+        parentThreadId: 'missing', internal: true, source: 'subAgentThreadSpawn', updatedAt: 6
+      })
     ])
 
     expect(hierarchy.map((item) => item.thread.id)).toEqual(['parent'])
-    expect(hierarchy[0]?.children.map((item) => item.thread.id)).toEqual(['child'])
+    expect(hierarchy[0]?.children.map((item) => item.thread.id)).toEqual(['spawned'])
   })
 })

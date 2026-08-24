@@ -143,8 +143,33 @@ describe('ThreadService', () => {
       descendantCount: 1,
       archived: false
     })
-    expect(result.threads.find((item) => item.id === 'child')?.internal).toBe(true)
+    expect(result.threads.find((item) => item.id === 'child')).toMatchObject({
+      internal: true,
+      source: 'subAgentThreadSpawn'
+    })
     expect(result.threads.find((item) => item.id === 'archived')?.archived).toBe(true)
+  })
+
+  it('classifies system and user-spawned subagent sources', async () => {
+    const spawned = thread('spawned', {
+      source: { subAgent: { thread_spawn: {
+        parent_thread_id: 'parent', depth: 1, agent_path: null,
+        agent_nickname: null, agent_role: null
+      } } }
+    })
+    const review = thread('review', { source: { subAgent: 'review' } })
+    const compact = thread('compact', { source: { subAgent: 'compact' } })
+    const guardian = thread('guardian', { source: { subAgent: { other: 'guardian' } } })
+
+    const result = await new ThreadService(
+      new FakeClient([spawned, review, compact, guardian], [])
+    ).listThreads()
+    expect(Object.fromEntries(result.threads.map((item) => [item.id, item.source]))).toEqual({
+      spawned: 'subAgentThreadSpawn',
+      review: 'subAgentReview',
+      compact: 'subAgentCompact',
+      guardian: 'subAgentOther'
+    })
   })
 
   it('deduplicates selected descendants and skips protected tasks', async () => {

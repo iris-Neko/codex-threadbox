@@ -58,7 +58,11 @@ export interface DesktopRecentsRepairLike {
 function sourceLabel(source: Thread['source']): string {
   if (typeof source === 'string') return source
   if ('custom' in source) return source.custom
-  return 'subAgent'
+  const subAgent = source.subAgent
+  if (subAgent === 'review') return 'subAgentReview'
+  if (subAgent === 'compact') return 'subAgentCompact'
+  if (typeof subAgent === 'object' && 'thread_spawn' in subAgent) return 'subAgentThreadSpawn'
+  return 'subAgentOther'
 }
 
 function isInternal(thread: Thread): boolean {
