@@ -15,7 +15,7 @@ Threadbox brings Codex task history from every working directory into one search
 - List active and archived tasks across all working directories.
 - Search titles, previews, paths, sources, and task IDs.
 - Group desktop chats by Project, VS Code and CLI chats by working directory, and projectless desktop chats as independent tasks.
-- Organize VS Code and remote-host tasks into Threadbox projects from the Activity Bar, including drag-and-drop and multi-select actions.
+- Organize VS Code and remote-host tasks inside the Codex sidebar, including drag-and-drop and multi-select actions.
 - Switch between grouped and flat views, and filter by project/workspace, archive state, source, directory, or recent activity.
 - Archive, unarchive, and permanently delete one or many tasks.
 - Optionally move selected working directories to the system Trash while keeping other project files.
@@ -93,7 +93,7 @@ Running `threadbox` in a TTY opens the interactive manager. Scriptable commands 
 
 ## VS Code install
 
-Install **Threadbox for Codex** from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=irisNeko.threadbox-for-codex), [Open VSX](https://open-vsx.org/extension/irisNeko/threadbox-for-codex), or the release VSIX. Open the Threadbox Activity Bar view to search tasks and organize them with multi-select, drag-and-drop, or **Move to Project**; the move picker can create a project without leaving the workflow. Run **Threadbox: Open Manager** for the full table and advanced filters.
+Install **Threadbox for Codex** from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=irisNeko.threadbox-for-codex), [Open VSX](https://open-vsx.org/extension/irisNeko/threadbox-for-codex), or the release VSIX. Open the official Codex sidebar and expand **Threadbox** to search tasks and organize them with multi-select, drag-and-drop, or **Move to Project**; the move picker can create a project without leaving the workflow. Set `threadbox.sidebarLocation` to `standalone` for the original Activity Bar container. Threadbox also falls back there when a compatible Codex sidebar is unavailable. Run **Threadbox: Open Manager** for the full table and advanced filters.
 
 The extension declares `extensionKind: ["workspace"]`. In Remote SSH, Dev Containers, and Codespaces, Codex CLI, `CODEX_HOME`, task data, and the App Server process all remain on the remote host. Configure `threadbox.codexBinary`, `threadbox.codexHome`, or `threadbox.language` as machine-scoped settings when needed. An untrusted workspace cannot start Codex or modify task metadata.
 

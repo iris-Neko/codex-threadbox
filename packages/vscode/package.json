@@ -31,8 +31,11 @@
     "workspace"
   ],
   "activationEvents": [
+    "onStartupFinished",
     "onCommand:threadbox.openManager",
-    "onView:threadbox.sidebar"
+    "onView:threadbox.sidebar",
+    "onView:threadbox.sidebar.codexPrimary",
+    "onView:threadbox.sidebar.codexSecondary"
   ],
   "main": "./dist/extension.cjs",
   "icon": "dist/icon.png",
@@ -119,6 +122,12 @@
         "command": "threadbox.openDirectory",
         "title": "Open Working Directory",
         "category": "Threadbox"
+      },
+      {
+        "command": "threadbox.openInCodex",
+        "title": "Open in Codex",
+        "category": "Threadbox",
+        "icon": "$(comment-discussion)"
       }
     ],
     "viewsContainers": {
@@ -126,7 +135,8 @@
         {
           "id": "threadbox",
           "title": "Threadbox",
-          "icon": "dist/activitybar.svg"
+          "icon": "dist/activitybar.svg",
+          "when": "config.threadbox.sidebarLocation == standalone || !threadbox.codexContainerAvailable"
         }
       ]
     },
@@ -134,7 +144,26 @@
       "threadbox": [
         {
           "id": "threadbox.sidebar",
-          "name": "Codex Tasks"
+          "name": "Codex Tasks",
+          "when": "config.threadbox.sidebarLocation == standalone || !threadbox.codexContainerAvailable"
+        }
+      ],
+      "codexViewContainer": [
+        {
+          "id": "threadbox.sidebar.codexPrimary",
+          "name": "Threadbox",
+          "contextualTitle": "Threadbox: Codex Tasks",
+          "visibility": "collapsed",
+          "when": "config.threadbox.sidebarLocation == codex && threadbox.codexContainerAvailable && chatgpt.doesNotSupportSecondarySidebar"
+        }
+      ],
+      "codexSecondaryViewContainer": [
+        {
+          "id": "threadbox.sidebar.codexSecondary",
+          "name": "Threadbox",
+          "contextualTitle": "Threadbox: Codex Tasks",
+          "visibility": "collapsed",
+          "when": "config.threadbox.sidebarLocation == codex && threadbox.codexContainerAvailable && !chatgpt.doesNotSupportSecondarySidebar"
         }
       ]
     },
@@ -142,94 +171,99 @@
       "view/title": [
         {
           "command": "threadbox.openManager",
-          "when": "view == threadbox.sidebar",
+          "when": "view =~ /^threadbox\\.sidebar/",
           "group": "navigation@1"
         },
         {
           "command": "threadbox.searchSidebar",
-          "when": "view == threadbox.sidebar",
+          "when": "view =~ /^threadbox\\.sidebar/",
           "group": "navigation@2"
         },
         {
           "command": "threadbox.clearSidebarSearch",
-          "when": "view == threadbox.sidebar && threadbox.searchActive",
+          "when": "view =~ /^threadbox\\.sidebar/ && threadbox.searchActive",
           "group": "navigation@3"
         },
         {
           "command": "threadbox.refreshSidebar",
-          "when": "view == threadbox.sidebar",
+          "when": "view =~ /^threadbox\\.sidebar/",
           "group": "navigation@4"
         },
         {
           "command": "threadbox.newProject",
-          "when": "view == threadbox.sidebar",
+          "when": "view =~ /^threadbox\\.sidebar/",
           "group": "navigation@5"
         }
       ],
       "view/item/context": [
         {
+          "command": "threadbox.openInCodex",
+          "when": "view =~ /^threadbox\\.sidebar/ && viewItem =~ /^threadbox\\.thread\\./",
+          "group": "navigation@0"
+        },
+        {
           "command": "threadbox.newProject",
-          "when": "view == threadbox.sidebar && viewItem == threadbox.projects",
+          "when": "view =~ /^threadbox\\.sidebar/ && viewItem == threadbox.projects",
           "group": "inline@1"
         },
         {
           "command": "threadbox.renameProject",
-          "when": "view == threadbox.sidebar && viewItem == threadbox.project.threadbox",
+          "when": "view =~ /^threadbox\\.sidebar/ && viewItem == threadbox.project.threadbox",
           "group": "inline@1"
         },
         {
           "command": "threadbox.deleteProject",
-          "when": "view == threadbox.sidebar && viewItem == threadbox.project.threadbox",
+          "when": "view =~ /^threadbox\\.sidebar/ && viewItem == threadbox.project.threadbox",
           "group": "project@2"
         },
         {
           "command": "threadbox.moveToProject",
-          "when": "view == threadbox.sidebar && viewItem =~ /^threadbox\\.thread\\./",
+          "when": "view =~ /^threadbox\\.sidebar/ && viewItem =~ /^threadbox\\.thread\\./",
           "group": "inline@1"
         },
         {
           "command": "threadbox.moveToProject",
-          "when": "view == threadbox.sidebar && viewItem =~ /^threadbox\\.group\\./",
+          "when": "view =~ /^threadbox\\.sidebar/ && viewItem =~ /^threadbox\\.group\\./",
           "group": "inline@1"
         },
         {
           "command": "threadbox.moveToProject",
-          "when": "view == threadbox.sidebar && viewItem =~ /^threadbox\\.(thread|group)\\./",
+          "when": "view =~ /^threadbox\\.sidebar/ && viewItem =~ /^threadbox\\.(thread|group)\\./",
           "group": "project@1"
         },
         {
           "command": "threadbox.archive",
-          "when": "view == threadbox.sidebar && viewItem =~ /^threadbox\\.thread\\.active\\./",
+          "when": "view =~ /^threadbox\\.sidebar/ && viewItem =~ /^threadbox\\.thread\\.active\\./",
           "group": "manage@1"
         },
         {
           "command": "threadbox.unarchive",
-          "when": "view == threadbox.sidebar && viewItem =~ /^threadbox\\.thread\\.archived\\./",
+          "when": "view =~ /^threadbox\\.sidebar/ && viewItem =~ /^threadbox\\.thread\\.archived\\./",
           "group": "manage@1"
         },
         {
           "command": "threadbox.pin",
-          "when": "view == threadbox.sidebar && viewItem =~ /\\.unpinned$/",
+          "when": "view =~ /^threadbox\\.sidebar/ && viewItem =~ /\\.unpinned$/",
           "group": "manage@2"
         },
         {
           "command": "threadbox.unpin",
-          "when": "view == threadbox.sidebar && viewItem =~ /\\.pinned$/",
+          "when": "view =~ /^threadbox\\.sidebar/ && viewItem =~ /\\.pinned$/",
           "group": "manage@2"
         },
         {
           "command": "threadbox.copyId",
-          "when": "view == threadbox.sidebar && viewItem =~ /^threadbox\\.thread\\./",
+          "when": "view =~ /^threadbox\\.sidebar/ && viewItem =~ /^threadbox\\.thread\\./",
           "group": "navigation@1"
         },
         {
           "command": "threadbox.openDirectory",
-          "when": "view == threadbox.sidebar && viewItem =~ /^threadbox\\.thread\\./",
+          "when": "view =~ /^threadbox\\.sidebar/ && viewItem =~ /^threadbox\\.thread\\./",
           "group": "navigation@2"
         },
         {
           "command": "threadbox.delete",
-          "when": "view == threadbox.sidebar && viewItem =~ /^threadbox\\.thread\\./",
+          "when": "view =~ /^threadbox\\.sidebar/ && viewItem =~ /^threadbox\\.thread\\./",
           "group": "danger@1"
         }
       ]
@@ -259,6 +293,20 @@
           "default": "auto",
           "scope": "machine",
           "description": "Language used by the Threadbox manager."
+        },
+        "threadbox.sidebarLocation": {
+          "type": "string",
+          "enum": [
+            "codex",
+            "standalone"
+          ],
+          "enumDescriptions": [
+            "Show Threadbox as a collapsible view inside the official Codex sidebar.",
+            "Show Threadbox in its own Activity Bar container."
+          ],
+          "default": "codex",
+          "scope": "window",
+          "description": "Controls where the Threadbox task tree is shown. The standalone container is used automatically when a compatible Codex sidebar is unavailable."
         }
       }
     }

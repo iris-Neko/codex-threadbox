@@ -9,9 +9,15 @@ import type {
   PlatformCapabilities,
   ThreadboxApi
 } from '../../../src/shared/contracts'
+import { DoubleClickGate } from './double-click'
 import { parseRpcRequest, type RpcRequest, type RpcResponse } from './rpc'
 import { ProjectStore } from './project-store'
 import { SidebarItem, ThreadboxSidebarProvider } from './sidebar'
+import {
+  CODEX_PRIMARY_CONTAINER,
+  CODEX_SECONDARY_CONTAINER,
+  findKnownCodexViewContainers
+} from './sidebar-location'
 import { requireWorkspaceTrust } from './workspace-trust'
 
 const CONFIGURATION = 'threadbox'
@@ -20,6 +26,8 @@ const REFRESH_SIDEBAR_COMMAND = 'threadbox.refreshSidebar'
 const SEARCH_SIDEBAR_COMMAND = 'threadbox.searchSidebar'
 const CLEAR_SEARCH_COMMAND = 'threadbox.clearSidebarSearch'
 const SIDEBAR_VIEW = 'threadbox.sidebar'
+const CODEX_PRIMARY_SIDEBAR_VIEW = 'threadbox.sidebar.codexPrimary'
+const CODEX_SECONDARY_SIDEBAR_VIEW = 'threadbox.sidebar.codexSecondary'
 const CODEX_EXTENSION_ID = 'openai.chatgpt'
 const SIDEBAR_COMMANDS = {
   newProject: 'threadbox.newProject',
@@ -33,12 +41,18 @@ const SIDEBAR_COMMANDS = {
   delete: 'threadbox.delete',
   copyId: 'threadbox.copyId',
   openDirectory: 'threadbox.openDirectory',
-  openInCodex: 'threadbox.openInCodex'
+  openInCodex: 'threadbox.openInCodex',
+  openOnDoubleClick: 'threadbox.openInCodexOnDoubleClick'
 } as const
 
 function selectedItems(primary?: SidebarItem, selection?: SidebarItem[]): SidebarItem[] {
   if (selection && selection.length > 0) return selection
   return primary ? [primary] : []
+}
+
+function commandThreadId(value: unknown): string | null {
+  if (typeof value === 'string' && value.length > 0) return value
+  return value instanceof SidebarItem ? value.thread?.id ?? null : null
 }
 
 async function openThreadInCodex(threadId: string): Promise<void> {
@@ -280,31 +294,46 @@ export interface ThreadboxExtensionApi {
   getThreadboxApi(): ThreadboxApi
 }
 
-export function activate(context: vscode.ExtensionContext): ThreadboxExtensionApi {
+export async function activate(context: vscode.ExtensionContext): Promise<ThreadboxExtensionApi> {
   const version = String(context.extension.packageJSON.version ?? '0.4.1')
   const runtime = new RuntimeHost(version)
   const projects = new ProjectStore(join(context.globalStorageUri.fsPath, 'projects-v1.json'))
   const api = createApi(runtime, projects)
   const sidebar = new ThreadboxSidebarProvider(
     api,
-    SIDEBAR_COMMANDS.openInCodex,
+    SIDEBAR_COMMANDS.openOnDoubleClick,
     vscode.env.language
   )
-  const sidebarView = vscode.window.createTreeView(SIDEBAR_VIEW, {
+  const doubleClickGate = new DoubleClickGate()
+  const codexExtension = vscode.extensions.getExtension(CODEX_EXTENSION_ID)
+  const codexContainers = findKnownCodexViewContainers(codexExtension?.packageJSON)
+  await vscode.commands.executeCommand(
+    'setContext',
+    'threadbox.codexContainerAvailable',
+    codexContainers.length > 0
+  )
+  const viewIds = [SIDEBAR_VIEW]
+  if (codexContainers.includes(CODEX_PRIMARY_CONTAINER)) viewIds.push(CODEX_PRIMARY_SIDEBAR_VIEW)
+  if (codexContainers.includes(CODEX_SECONDARY_CONTAINER)) {
+    viewIds.push(CODEX_SECONDARY_SIDEBAR_VIEW)
+  }
+  const sidebarViews = viewIds.map((viewId) => vscode.window.createTreeView(viewId, {
     treeDataProvider: sidebar,
     dragAndDropController: sidebar,
     canSelectMany: true,
     showCollapseAll: true
-  })
+  }))
   let panel: vscode.WebviewPanel | null = null
-  context.subscriptions.push(runtime, sidebar, sidebarView)
+  context.subscriptions.push(runtime, sidebar, ...sidebarViews)
   context.subscriptions.push(sidebar.onDidChangeSummary((summary) => {
-    sidebarView.badge = summary.taskCount > 0
-      ? { value: summary.taskCount, tooltip: summary.tooltip }
-      : undefined
+    for (const view of sidebarViews) {
+      view.badge = summary.taskCount > 0
+        ? { value: summary.taskCount, tooltip: summary.tooltip }
+        : undefined
+    }
   }))
   context.subscriptions.push(sidebar.onDidChangeSearch((query) => {
-    sidebarView.description = query || undefined
+    for (const view of sidebarViews) view.description = query || undefined
     void vscode.commands.executeCommand('setContext', 'threadbox.searchActive', query.length > 0)
   }))
   void vscode.commands.executeCommand('setContext', 'threadbox.searchActive', false)
@@ -348,12 +377,18 @@ export function activate(context: vscode.ExtensionContext): ThreadboxExtensionAp
         sidebar.copyIds(selectedItems(item, selection))),
     vscode.commands.registerCommand(SIDEBAR_COMMANDS.openDirectory,
       (item?: SidebarItem) => sidebar.openDirectory(item)),
-    vscode.commands.registerCommand(SIDEBAR_COMMANDS.openInCodex, async (threadId?: unknown) => {
-      if (typeof threadId !== 'string' || threadId.length === 0) return
+    vscode.commands.registerCommand(SIDEBAR_COMMANDS.openInCodex, async (value?: unknown) => {
+      const threadId = commandThreadId(value)
+      if (!threadId) return
       try { await openThreadInCodex(threadId) }
       catch (error) {
         await vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error))
       }
+    }),
+    vscode.commands.registerCommand(SIDEBAR_COMMANDS.openOnDoubleClick, async (value?: unknown) => {
+      const threadId = commandThreadId(value)
+      if (!threadId || !doubleClickGate.register(threadId)) return
+      await vscode.commands.executeCommand(SIDEBAR_COMMANDS.openInCodex, threadId)
     })
   )
   context.subscriptions.push(vscode.commands.registerCommand(COMMAND, () => {

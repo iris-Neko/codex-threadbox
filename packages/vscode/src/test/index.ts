@@ -22,6 +22,13 @@ export async function run(): Promise<void> {
       'irisNeko.threadbox-for-codex'
     )
     assert(extension, 'Threadbox extension was not discovered.')
+    const manifest = extension.packageJSON as {
+      contributes?: { configuration?: { properties?: Record<string, { default?: unknown }> } }
+    }
+    assert(
+      manifest.contributes?.configuration?.properties?.['threadbox.sidebarLocation']?.default === 'codex',
+      'Threadbox did not default to the Codex sidebar.'
+    )
     const exported = await extension.activate()
     const api = exported.getThreadboxApi()
     const capabilities = await api.getPlatformCapabilities()
@@ -53,6 +60,8 @@ export async function run(): Promise<void> {
     assert(commands.includes('threadbox.newProject'), 'Threadbox project commands were not registered.')
     assert(commands.includes('threadbox.moveToProject'), 'Threadbox task move command was not registered.')
     assert(commands.includes('threadbox.openInCodex'), 'Threadbox Codex task command was not registered.')
+    assert(commands.includes('threadbox.openInCodexOnDoubleClick'),
+      'Threadbox double-click task command was not registered.')
     await vscode.commands.executeCommand('threadbox.refreshSidebar')
     await vscode.commands.executeCommand('threadbox.openManager')
   } finally {
