@@ -69,7 +69,8 @@
       {
         "command": "threadbox.moveToProject",
         "title": "Move to Project...",
-        "category": "Threadbox"
+        "category": "Threadbox",
+        "icon": "$(folder-opened)"
       },
       {
         "command": "threadbox.archive",
@@ -161,6 +162,16 @@
         {
           "command": "threadbox.moveToProject",
           "when": "view == threadbox.sidebar && viewItem =~ /^threadbox\\.thread\\./",
+          "group": "inline@1"
+        },
+        {
+          "command": "threadbox.moveToProject",
+          "when": "view == threadbox.sidebar && viewItem =~ /^threadbox\\.group\\./",
+          "group": "inline@1"
+        },
+        {
+          "command": "threadbox.moveToProject",
+          "when": "view == threadbox.sidebar && viewItem =~ /^threadbox\\.(thread|group)\\./",
           "group": "project@1"
         },
         {

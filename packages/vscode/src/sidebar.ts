@@ -8,6 +8,7 @@ import type {
   ThreadRecord
 } from '../../../src/shared/contracts'
 import { groupThreads } from '../../core/src/thread-utils'
+import { collectThreadIds } from './sidebar-selection'
 
 const SETTINGS_COMMAND = 'workbench.action.openSettings'
 const TREE_MIME = 'application/vnd.code.tree.threadbox.sidebar'
@@ -129,7 +130,7 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
   dispose(): void { this.changed.dispose(); this.summaryChanged.dispose() }
 
   async handleDrag(source: readonly SidebarItem[], dataTransfer: vscode.DataTransfer): Promise<void> {
-    const ids = source.flatMap((item) => item.thread ? [item.thread.id] : [])
+    const ids = collectThreadIds(source)
     if (ids.length > 0) dataTransfer.set(TREE_MIME, new vscode.DataTransferItem(JSON.stringify(ids)))
   }
 
@@ -177,7 +178,7 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
   }
 
   async moveThreads(items: readonly SidebarItem[]): Promise<void> {
-    const ids = this.threadIds(items)
+    const ids = collectThreadIds(items)
     if (ids.length === 0) return
     const copy = labels(this.locale)
     const custom = this.snapshot.projects.filter((project) => project.kind === 'threadbox')
@@ -288,31 +289,28 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
     const children = this.threadItems(active)
     if (archived.length > 0) children.push(new SidebarItem(copy.archived, {
       kind: 'archive', description: String(archived.filter((thread) => !thread.internal).length),
-      icon: 'archive', children: this.threadItems(archived)
+      icon: 'archive', children: this.threadItems(archived), contextValue: 'threadbox.group.archive'
     }))
     return children
   }
 
   private async loadRootItems(): Promise<SidebarItem[]> {
     const copy = labels(this.locale)
-    const open = new SidebarItem(copy.openManager, {
-      kind: 'action', icon: 'open-preview', command: this.command(copy.openManager)
-    })
     if (!vscode.workspace.isTrusted) {
       this.summaryChanged.fire({ taskCount: 0, tooltip: copy.workspaceTrust })
-      return [open, new SidebarItem(copy.workspaceTrust, { kind: 'status', icon: 'shield', tooltip: copy.workspaceTrust })]
+      return [new SidebarItem(copy.workspaceTrust, { kind: 'status', icon: 'shield', tooltip: copy.workspaceTrust })]
     }
     let status: EnvironmentStatus
     try { status = await this.api.getEnvironmentStatus() }
     catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       this.summaryChanged.fire({ taskCount: 0, tooltip: message })
-      return [open, new SidebarItem(copy.unavailable, { kind: 'status', description: message, icon: 'error',
+      return [new SidebarItem(copy.unavailable, { kind: 'status', description: message, icon: 'error',
         command: this.settingsCommand(copy.settings), tooltip: message })]
     }
     if (status.state !== 'ready') {
       this.summaryChanged.fire({ taskCount: 0, tooltip: status.message ?? copy.unavailable })
-      return [open, ...this.environmentItems(status, copy), new SidebarItem(copy.settings, {
+      return [...this.environmentItems(status, copy), new SidebarItem(copy.settings, {
         kind: 'action', icon: 'settings-gear', command: this.settingsCommand(copy.settings)
       })]
     }
@@ -343,7 +341,8 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
       const unassignedChildren = unassignedGroups.map((group) => new SidebarItem(group.name || copy.unassigned, {
         kind: 'directory',
         description: String(group.threads.filter((thread) => !thread.internal && !thread.archived).length),
-        icon: 'folder', tooltip: group.directories.join('\n'), children: this.projectChildren(group.threads, copy)
+        icon: 'folder', tooltip: group.directories.join('\n'), children: this.projectChildren(group.threads, copy),
+        contextValue: 'threadbox.group.directory'
       }))
       projectItems.push(new SidebarItem(copy.unassigned, { kind: 'unassigned',
         description: String(unassignedGroups.flatMap((group) => group.threads)
@@ -351,14 +350,14 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
         icon: 'inbox', children: unassignedChildren, contextValue: 'threadbox.project.unassigned' }))
       const activeCount = main.filter((thread) => !thread.archived).length
       this.summaryChanged.fire({ taskCount: activeCount, tooltip: `${activeCount} tasks` })
-      return [open, ...this.environmentItems(result.environment, copy), new SidebarItem(copy.projects, {
+      return [...this.environmentItems(result.environment, copy), new SidebarItem(copy.projects, {
         kind: 'section', description: String(customProjects.length), icon: 'project', children: projectItems,
         contextValue: 'threadbox.projects'
       })]
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       this.summaryChanged.fire({ taskCount: 0, tooltip: message })
-      return [open, ...this.environmentItems(status, copy), new SidebarItem(copy.unavailable, {
+      return [...this.environmentItems(status, copy), new SidebarItem(copy.unavailable, {
         kind: 'status', description: message, icon: 'error', tooltip: message
       })]
     }
