@@ -113,6 +113,15 @@ const archived = [
     updatedAt: now - 43_200
   }
 ]
+const officialProjects = [{
+  id: 'project-design-system',
+  name: 'Design System',
+  roots: [{ path: projectDirectory }],
+  metadata: {},
+  position: 0,
+  createdAt: now - 10_000,
+  updatedAt: now - 100
+}]
 
 function send(message) {
   process.stdout.write(`${JSON.stringify(message)}\n`)
@@ -126,6 +135,8 @@ function log(message) {
 
 log({ event: 'server-start', pid: process.pid })
 let activeListRequests = 0
+let createdThreadSequence = 0
+let createdProjectSequence = 0
 
 readline.createInterface({ input: process.stdin }).on('line', (line) => {
   let message
@@ -135,6 +146,11 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
     return
   }
   log(message)
+  const failId = process.env.THREADBOX_FAKE_FAIL_ID
+  if (failId && message.id !== undefined && message.params?.threadId === failId) {
+    send({ id: message.id, error: { code: -32000, message: 'fake mutation failure' } })
+    return
+  }
   if (message.method === 'initialize') {
     send({ id: message.id, result: { userAgent: 'fake-codex' } })
   } else if (message.method === 'thread/list') {
@@ -154,11 +170,71 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
         backwardsCursor: null
       }
     })
-  } else if (message.id !== undefined) {
-    if (message.params?.threadId === process.env.THREADBOX_FAKE_FAIL_ID) {
-      send({ id: message.id, error: { code: -32000, message: 'fake mutation failure' } })
+  } else if (message.method === 'project/list') {
+    send({
+      id: message.id,
+      result: {
+        data: officialProjects,
+        nextCursor: null
+      }
+    })
+  } else if (message.method === 'project/create') {
+    createdProjectSequence += 1
+    const project = {
+      id: `project-created-${createdProjectSequence}`,
+      name: message.params.name,
+      roots: message.params.roots,
+      metadata: message.params.metadata ?? {},
+      position: officialProjects.length,
+      createdAt: now,
+      updatedAt: now
+    }
+    officialProjects.push(project)
+    send({ id: message.id, result: { project } })
+  } else if (message.method === 'project/update') {
+    const project = officialProjects.find((item) => item.id === message.params.projectId)
+    if (!project) {
+      send({ id: message.id, error: { code: -32000, message: 'fake project not found' } })
       return
     }
+    if (message.params.name !== undefined) project.name = message.params.name
+    if (message.params.roots !== undefined) project.roots = message.params.roots
+    if (message.params.metadata !== undefined) project.metadata = message.params.metadata
+    project.updatedAt = now
+    send({ id: message.id, result: { project } })
+  } else if (message.method === 'project/delete') {
+    const index = officialProjects.findIndex((item) => item.id === message.params.projectId)
+    if (index >= 0) officialProjects.splice(index, 1)
+    for (const thread of [...active, ...archived]) {
+      if (thread.projectId === message.params.projectId) thread.projectId = null
+    }
+    send({ id: message.id, result: {} })
+  } else if (message.method === 'thread/start') {
+    createdThreadSequence += 1
+    const id = `019f0000-0000-7000-9000-${String(createdThreadSequence).padStart(12, '0')}`
+    const thread = {
+      ...active[0],
+      id,
+      sessionId: id,
+      parentThreadId: null,
+      preview: '',
+      projectId: message.params.projectId ?? null,
+      cwd: message.params.cwd,
+      name: null,
+      createdAt: now,
+      updatedAt: now
+    }
+    active.push(thread)
+    send({ id: message.id, result: { thread } })
+  } else if (message.method === 'thread/name/set') {
+    const thread = active.find((item) => item.id === message.params.threadId)
+    if (thread) thread.name = message.params.name
+    send({ id: message.id, result: {} })
+  } else if (message.method === 'thread/delete') {
+    const index = active.findIndex((item) => item.id === message.params.threadId)
+    if (index >= 0) active.splice(index, 1)
+    send({ id: message.id, result: {} })
+  } else if (message.id !== undefined) {
     send({ id: message.id, result: {} })
   }
 })

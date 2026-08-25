@@ -10,6 +10,7 @@ import {
   MessageSquare,
   Pencil,
   Pin,
+  Plus,
   Trash2
 } from 'lucide-react'
 import { Fragment, useEffect, useRef } from 'react'
@@ -29,6 +30,8 @@ interface ThreadTableProps {
   someSelectableSelected: boolean
   allowOpenDirectory: boolean
   allowActiveSelection: boolean
+  allowProjectThreadCreation: boolean
+  projectMutationDisabled: boolean
   onToggle(id: string): void
   onToggleVisible(): void
   onToggleExpanded(id: string, currentlyExpanded: boolean): void
@@ -37,6 +40,7 @@ interface ThreadTableProps {
   onCopyId(id: string): void
   onArchive(thread: ThreadRecord): void
   onDelete(thread: ThreadRecord): void
+  onCreateThread(project: ProjectRecord): void
   onRenameProject(project: ProjectRecord): void
   onDeleteProject(project: ProjectRecord): void
 }
@@ -86,6 +90,8 @@ export function ThreadTable({
   someSelectableSelected,
   allowOpenDirectory,
   allowActiveSelection,
+  allowProjectThreadCreation,
+  projectMutationDisabled,
   onToggle,
   onToggleVisible,
   onToggleExpanded,
@@ -94,6 +100,7 @@ export function ThreadTable({
   onCopyId,
   onArchive,
   onDelete,
+  onCreateThread,
   onRenameProject,
   onDeleteProject
 }: ThreadTableProps): React.JSX.Element {
@@ -258,7 +265,7 @@ export function ThreadTable({
       group.kind === 'threadboxProject'
         ? t('threadboxProject')
         : group.kind === 'desktopProject'
-        ? t('desktopProject')
+        ? t(allowProjectThreadCreation ? 'codexProject' : 'desktopProject')
         : group.kind === 'standalone'
           ? t('standaloneGroup')
           : group.sources.length === 1 && group.sources[0] === 'vscode'
@@ -310,26 +317,44 @@ export function ThreadTable({
                 {group.spawnedCount > 0 && ` · ${t('spawnedTaskCount', { count: group.spawnedCount })}`}
               </span>
             </button>
-            {group.kind === 'threadboxProject' && group.project && (
+            {group.project && (
               <div className="thread-group-actions">
-                <button
-                  className="icon-button icon-button--small"
-                  type="button"
-                  title={t('renameProject')}
-                  aria-label={t('renameProject')}
-                  onClick={() => onRenameProject(group.project!)}
-                >
-                  <Pencil size={15} aria-hidden="true" />
-                </button>
-                <button
-                  className="icon-button icon-button--small icon-button--danger"
-                  type="button"
-                  title={t('deleteProject')}
-                  aria-label={t('deleteProject')}
-                  onClick={() => onDeleteProject(group.project!)}
-                >
-                  <Trash2 size={15} aria-hidden="true" />
-                </button>
+                {allowProjectThreadCreation && (
+                  <button
+                    className="icon-button icon-button--small"
+                    type="button"
+                    title={group.project.createThreadUnavailableReason ?? t('newThread')}
+                    aria-label={t('newThread')}
+                    disabled={projectMutationDisabled || !group.project.canCreateThread}
+                    onClick={() => onCreateThread(group.project!)}
+                  >
+                    <Plus size={15} aria-hidden="true" />
+                  </button>
+                )}
+                {!group.project.readOnly && (
+                  <>
+                    <button
+                      className="icon-button icon-button--small"
+                      type="button"
+                      title={t('renameProject')}
+                      aria-label={t('renameProject')}
+                      disabled={projectMutationDisabled}
+                      onClick={() => onRenameProject(group.project!)}
+                    >
+                      <Pencil size={15} aria-hidden="true" />
+                    </button>
+                    <button
+                      className="icon-button icon-button--small icon-button--danger"
+                      type="button"
+                      title={t('deleteProject')}
+                      aria-label={t('deleteProject')}
+                      disabled={projectMutationDisabled}
+                      onClick={() => onDeleteProject(group.project!)}
+                    >
+                      <Trash2 size={15} aria-hidden="true" />
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </div>

@@ -19,6 +19,14 @@ describe('VS Code Webview RPC validation', () => {
     expect(parseRpcRequest({
       kind: 'threadbox.request', id: 'request-3', method: 'createProject', args: ['Focus']
     })).toMatchObject({ method: 'createProject' })
+    expect(parseRpcRequest({
+      kind: 'threadbox.request', id: 'request-official', method: 'createOfficialProject',
+      args: ['Shared project']
+    })).toMatchObject({ method: 'createOfficialProject' })
+    expect(parseRpcRequest({
+      kind: 'threadbox.request', id: 'request-4', method: 'createThreadInProject',
+      args: ['official:one', 'New task']
+    })).toMatchObject({ method: 'createThreadInProject' })
   })
 
   it('rejects unknown methods and host-only directory deletion', () => {
@@ -45,6 +53,21 @@ describe('VS Code Webview RPC validation', () => {
     })).toBeNull()
     expect(parseRpcRequest({
       kind: 'threadbox.request', id: '6', method: 'assignThreads', args: [['thread-1'], 42]
+    })).toBeNull()
+    expect(parseRpcRequest({
+      kind: 'threadbox.request', id: '7', method: 'createThreadInProject',
+      args: ['official:one', '   ']
+    })).toBeNull()
+    expect(parseRpcRequest({
+      kind: 'threadbox.request', id: '8', method: 'createThreadInProject',
+      args: ['official:one', 'bad\nname']
+    })).toBeNull()
+    expect(parseRpcRequest({
+      kind: 'threadbox.request', id: '9', method: 'createThreadInProject',
+      args: ['official:\ninvalid', 'New task']
+    })).toBeNull()
+    expect(parseRpcRequest({
+      kind: 'threadbox.request', id: '10', method: 'createOfficialProject', args: ['bad\nname']
     })).toBeNull()
     expect(parseRpcRequest({
       kind: 'threadbox.request',

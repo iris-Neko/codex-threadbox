@@ -123,6 +123,10 @@ export interface ProjectRecord {
   name: string
   kind: ProjectKind
   readOnly: boolean
+  codexProjectId: string | null
+  roots: string[]
+  canCreateThread: boolean
+  createThreadUnavailableReason: string | null
   createdAt: number | null
   updatedAt: number | null
 }
@@ -131,6 +135,8 @@ export interface ProjectSnapshot {
   projects: ProjectRecord[]
   assignments: Record<string, string>
   refreshedAt: number
+  canManageOfficialProjects?: boolean
+  officialProjectManagementUnavailableReason?: string | null
 }
 
 export interface PlatformCapabilities {
@@ -141,6 +147,14 @@ export interface PlatformCapabilities {
   chooseCliPath: boolean
   openWorkingDirectory: boolean
   currentWorkspaceDirectories: string[]
+  projectThreadCreation?: boolean
+}
+
+export interface CreatedProjectThread {
+  threadId: string
+  name: string
+  cwd: string
+  projectId: string
 }
 
 export interface ThreadboxApi {
@@ -154,9 +168,14 @@ export interface ThreadboxApi {
   setPinned(ids: string[], pinned: boolean): Promise<BatchOperationResult>
   listProjects(): Promise<ProjectSnapshot>
   createProject(name: string): Promise<ProjectSnapshot>
+  createOfficialProject?(name: string): Promise<ProjectSnapshot | null>
   renameProject(id: string, name: string): Promise<ProjectSnapshot>
   deleteProject(id: string): Promise<ProjectSnapshot>
   assignThreads(ids: string[], projectId: string | null): Promise<ProjectSnapshot>
+  createThreadInProject?(
+    projectId: string,
+    name: string
+  ): Promise<CreatedProjectThread | null>
   openWorkingDirectory(path: string): Promise<string | null>
   copyThreadId(id: string): Promise<void>
   chooseCliPath(): Promise<string | null>

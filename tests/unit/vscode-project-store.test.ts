@@ -61,7 +61,42 @@ describe('VS Code project store', () => {
 
     const assigned = await store.assign(['child'], project.id)
     expect(assigned.assignments).toEqual({ root: project.id })
+    expect(assigned.projects.find((item) => item.id === project.id)?.roots).toEqual(['/work/app'])
     expect((await store.assign(['root', 'child'], null)).assignments).toEqual({})
+  })
+
+  it('assigns a newly created blank task without requiring a refreshed inventory', async () => {
+    const { store } = await setup()
+    const project = (await store.create('Focus')).projects[0]!
+    await store.assignCreatedThread('new-thread', project.id)
+    expect((await store.list()).assignments).toEqual({ 'new-thread': project.id })
+  })
+
+  it('uses official project names and roots from the Codex project catalog', async () => {
+    const { store } = await setup()
+    const snapshot = await store.setInventory([], {
+      available: true,
+      message: null,
+      projects: [{
+        id: 'codex-project',
+        name: 'Official Product',
+        roots: [{ path: '/work/product' }, { path: '/work/docs' }],
+        metadata: {},
+        position: 0,
+        createdAt: 1,
+        updatedAt: 2
+      }]
+    })
+    expect(snapshot.projects).toContainEqual(expect.objectContaining({
+      id: 'official:codex-project',
+      name: 'Official Product',
+      codexProjectId: 'codex-project',
+      roots: ['/work/product', '/work/docs'],
+      canCreateThread: true,
+      readOnly: false
+    }))
+    expect(snapshot.canManageOfficialProjects).toBe(true)
+    expect(snapshot.officialProjectManagementUnavailableReason).toBeNull()
   })
 
   it('removes project assignments without changing the inventory', async () => {
@@ -77,7 +112,7 @@ describe('VS Code project store', () => {
     await expect(store.assign(['task'], project.id)).rejects.toThrow(/not found/)
   })
 
-  it('prunes missing tasks and preserves official projects as read-only', async () => {
+  it('prunes missing tasks and preserves official project metadata ownership', async () => {
     const { store } = await setup()
     const official = record({ id: 'official-task', projectId: 'codex-project', cwd: '/work/product' })
     await store.setInventory([official])
@@ -88,8 +123,9 @@ describe('VS Code project store', () => {
 
     const restored = await store.setInventory([official])
     expect(restored.projects.find((item) => item.kind === 'official')).toMatchObject({
-      id: 'official:codex-project', name: 'product', readOnly: true
+      id: 'official:codex-project', name: 'product', readOnly: true, canCreateThread: false
     })
+    expect(restored.canManageOfficialProjects).toBe(false)
   })
 
   it('backs up a corrupt file and starts with an empty snapshot', async () => {

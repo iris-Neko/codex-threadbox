@@ -181,12 +181,14 @@ export function groupThreads(
   }
 
   if (mode === 'projects' && projects) {
-    for (const project of projects.projects.filter((item) => item.kind === 'threadbox')) {
-      const id = `threadbox-project:${project.id}`
+    for (const project of projects.projects) {
+      const id = project.kind === 'threadbox'
+        ? `threadbox-project:${project.id}`
+        : `project:${project.codexProjectId ?? project.id.replace(/^official:/, '')}`
       if (groups.has(id)) continue
       groups.set(id, {
         id,
-        kind: 'threadboxProject',
+        kind: project.kind === 'threadbox' ? 'threadboxProject' : 'desktopProject',
         projectId: project.id,
         project,
         name: project.name,
@@ -223,7 +225,9 @@ export function groupThreadRows(
 
   return groups.flatMap((group) => {
     const groupedRows = rowsByGroup.get(group.id)
-    if (!groupedRows && (group.kind !== 'threadboxProject' || group.threads.length > 0)) return []
+    const emptyProject = (group.kind === 'threadboxProject' || group.kind === 'desktopProject') &&
+      group.threads.length === 0
+    if (!groupedRows && !emptyProject) return []
     return [{
       ...group,
       rows: groupedRows ?? [],

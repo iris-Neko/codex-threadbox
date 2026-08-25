@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import * as vscode from 'vscode'
 import { AppServerClient, CodexRuntime, ThreadService } from '../../core/src/index'
 import type {
@@ -10,6 +10,15 @@ import type {
   ThreadboxApi
 } from '../../../src/shared/contracts'
 import { DoubleClickGate } from './double-click'
+import {
+  chooseOfficialProjectRoots,
+  chooseProjectDirectory,
+  createCodexProject,
+  createProjectThread,
+  deleteCodexProject,
+  listCodexProjects,
+  renameCodexProject
+} from './codex-projects'
 import { parseRpcRequest, type RpcRequest, type RpcResponse } from './rpc'
 import { ProjectStore } from './project-store'
 import { SidebarItem, ThreadboxSidebarProvider } from './sidebar'
@@ -31,6 +40,7 @@ const CODEX_SECONDARY_SIDEBAR_VIEW = 'threadbox.sidebar.codexSecondary'
 const CODEX_EXTENSION_ID = 'openai.chatgpt'
 const SIDEBAR_COMMANDS = {
   newProject: 'threadbox.newProject',
+  newThread: 'threadbox.newThreadInProject',
   renameProject: 'threadbox.renameProject',
   deleteProject: 'threadbox.deleteProject',
   moveToProject: 'threadbox.moveToProject',
@@ -104,13 +114,22 @@ class RuntimeHost implements vscode.Disposable {
 
   getService(): ThreadService {
     if (this.service) return this.service
+    this.service = new ThreadService(this.getClient())
+    return this.service
+  }
+
+  getClient(): AppServerClient {
+    if (this.client) return this.client
     this.client = new AppServerClient(this.getRuntime(), {
       name: 'codex_threadbox_vscode',
       title: 'Threadbox for Codex VS Code',
-      version: this.version
+      version: this.version,
+      initializeCapabilities: {
+        experimentalApi: true,
+        requestAttestation: false
+      }
     })
-    this.service = new ThreadService(this.client)
-    return this.service
+    return this.client
   }
 
   reset(): void {
@@ -144,7 +163,8 @@ function platformCapabilities(): PlatformCapabilities {
     directoryTrash: false,
     chooseCliPath: false,
     openWorkingDirectory: true,
-    currentWorkspaceDirectories
+    currentWorkspaceDirectories,
+    projectThreadCreation: true
   }
 }
 
@@ -153,6 +173,17 @@ function directoryUri(path: string): vscode.Uri {
     (folder) => folder.uri.scheme !== 'file'
   )?.uri
   return remoteBase ? remoteBase.with({ path }) : vscode.Uri.file(path)
+}
+
+async function refreshProjectSnapshot(
+  runtime: RuntimeHost,
+  projects: ProjectStore
+) {
+  const [result, codexProjects] = await Promise.all([
+    runtime.getService().listThreads(),
+    listCodexProjects(runtime.getClient())
+  ])
+  return projects.setInventory(result.threads, codexProjects)
 }
 
 function createApi(runtime: RuntimeHost, projects: ProjectStore): ThreadboxApi {
@@ -164,8 +195,11 @@ function createApi(runtime: RuntimeHost, projects: ProjectStore): ThreadboxApi {
     },
     listThreads: async () => {
       requireWorkspaceTrust(vscode.workspace.isTrusted)
-      const result = await runtime.getService().listThreads()
-      await projects.setInventory(result.threads)
+      const [result, codexProjects] = await Promise.all([
+        runtime.getService().listThreads(),
+        listCodexProjects(runtime.getClient())
+      ])
+      await projects.setInventory(result.threads, codexProjects)
       return result
     },
     deleteThreads: async (ids) => {
@@ -193,17 +227,108 @@ function createApi(runtime: RuntimeHost, projects: ProjectStore): ThreadboxApi {
       requireWorkspaceTrust(vscode.workspace.isTrusted)
       return projects.create(name)
     },
+    createOfficialProject: async (name) => {
+      requireWorkspaceTrust(vscode.workspace.isTrusted)
+      const snapshot = await projects.list()
+      if (!snapshot.canManageOfficialProjects) {
+        throw new Error(snapshot.officialProjectManagementUnavailableReason ??
+          'Codex project management is unavailable.')
+      }
+      const workspaceRoots = platformCapabilities().currentWorkspaceDirectories
+      const roots = await chooseOfficialProjectRoots(workspaceRoots, {
+        pickWorkspaceRoots: async (choices) => {
+          const selected = await vscode.window.showQuickPick(
+            choices.map((root) => ({
+              label: basename(root) || root,
+              description: root,
+              root,
+              picked: true
+            })),
+            {
+              canPickMany: true,
+              placeHolder: configuredLocale() === 'zh-CN'
+                ? '选择项目根目录'
+                : 'Choose project roots'
+            }
+          )
+          return selected?.map((item) => item.root) ?? null
+        },
+        pickFolders: async () => {
+          const selected = await vscode.window.showOpenDialog({
+            title: configuredLocale() === 'zh-CN' ? '选择项目根目录' : 'Choose project roots',
+            defaultUri: vscode.workspace.workspaceFolders?.[0]?.uri,
+            canSelectFiles: false,
+            canSelectFolders: true,
+            canSelectMany: true,
+            openLabel: configuredLocale() === 'zh-CN' ? '选择' : 'Select'
+          })
+          return selected?.map((item) => item.fsPath) ?? null
+        }
+      })
+      if (!roots || roots.length === 0) return null
+      await createCodexProject(runtime.getClient(), name, roots)
+      return refreshProjectSnapshot(runtime, projects)
+    },
     renameProject: async (id, name) => {
       requireWorkspaceTrust(vscode.workspace.isTrusted)
-      return projects.renameProject(id, name)
+      const project = await projects.getProject(id)
+      if (!project) throw new Error('Project not found.')
+      if (project.kind === 'threadbox') return projects.renameProject(id, name)
+      if (project.readOnly || !project.codexProjectId) {
+        throw new Error((await projects.list()).officialProjectManagementUnavailableReason ??
+          'This Codex project cannot be renamed in the current environment.')
+      }
+      await renameCodexProject(runtime.getClient(), project.codexProjectId, name)
+      return refreshProjectSnapshot(runtime, projects)
     },
     deleteProject: async (id) => {
       requireWorkspaceTrust(vscode.workspace.isTrusted)
-      return projects.deleteProject(id)
+      const project = await projects.getProject(id)
+      if (!project) throw new Error('Project not found.')
+      if (project.kind === 'threadbox') return projects.deleteProject(id)
+      if (project.readOnly || !project.codexProjectId) {
+        throw new Error((await projects.list()).officialProjectManagementUnavailableReason ??
+          'This Codex project cannot be deleted in the current environment.')
+      }
+      await deleteCodexProject(runtime.getClient(), project.codexProjectId)
+      return refreshProjectSnapshot(runtime, projects)
     },
     assignThreads: async (ids, projectId) => {
       requireWorkspaceTrust(vscode.workspace.isTrusted)
       return projects.assign(ids, projectId)
+    },
+    createThreadInProject: async (projectId, name) => {
+      requireWorkspaceTrust(vscode.workspace.isTrusted)
+      const project = await projects.getProject(projectId)
+      if (!project) throw new Error('Project not found.')
+      const cwd = await chooseProjectDirectory(project, {
+        pickRoot: async (roots) => {
+          const choice = await vscode.window.showQuickPick(
+            roots.map((root) => ({ label: basename(root) || root, description: root, root })),
+            { placeHolder: configuredLocale() === 'zh-CN' ? '选择工作目录' : 'Choose a working directory' }
+          )
+          return choice?.root ?? null
+        },
+        pickFolder: async () => {
+          const selected = await vscode.window.showOpenDialog({
+            title: configuredLocale() === 'zh-CN' ? '选择工作目录' : 'Choose a working directory',
+            defaultUri: vscode.workspace.workspaceFolders?.[0]?.uri,
+            canSelectFiles: false,
+            canSelectFolders: true,
+            canSelectMany: false,
+            openLabel: configuredLocale() === 'zh-CN' ? '选择' : 'Select'
+          })
+          return selected?.[0]?.fsPath ?? null
+        }
+      })
+      if (!cwd) return null
+      return createProjectThread(
+        runtime.getClient(),
+        project,
+        name,
+        cwd,
+        (threadId, targetProjectId) => projects.assignCreatedThread(threadId, targetProjectId)
+      )
     },
     openWorkingDirectory: async (path) => {
       requireWorkspaceTrust(vscode.workspace.isTrusted)
@@ -276,7 +401,8 @@ function attachRpc(
     try {
       response = { kind: 'threadbox.response', id: request.id, ok: true, value: await dispatch(api, request) }
       if (['deleteThreads', 'archiveThreads', 'unarchiveThreads', 'setPinned', 'updateSettings',
-        'createProject', 'renameProject', 'deleteProject', 'assignThreads']
+        'createProject', 'createOfficialProject', 'renameProject', 'deleteProject', 'assignThreads',
+        'createThreadInProject']
         .includes(request.method)) onMutation()
     } catch (error) {
       response = {
@@ -295,7 +421,7 @@ export interface ThreadboxExtensionApi {
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<ThreadboxExtensionApi> {
-  const version = String(context.extension.packageJSON.version ?? '0.4.1')
+  const version = String(context.extension.packageJSON.version ?? '0.5.0')
   const runtime = new RuntimeHost(version)
   const projects = new ProjectStore(join(context.globalStorageUri.fsPath, 'projects-v1.json'))
   const api = createApi(runtime, projects)
@@ -351,6 +477,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<Thread
   )
   context.subscriptions.push(
     vscode.commands.registerCommand(SIDEBAR_COMMANDS.newProject, () => sidebar.createProject()),
+    vscode.commands.registerCommand(SIDEBAR_COMMANDS.newThread,
+      (item?: SidebarItem) => sidebar.createThread(item)),
     vscode.commands.registerCommand(SIDEBAR_COMMANDS.renameProject,
       (item?: SidebarItem) => sidebar.renameProject(item)),
     vscode.commands.registerCommand(SIDEBAR_COMMANDS.deleteProject,

@@ -2,7 +2,7 @@
   "name": "codex-threadbox-vscode",
   "displayName": "Codex Threadbox",
   "description": "Manage Codex tasks locally, including on Remote SSH, Dev Containers, and Codespaces.",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "publisher": "irisNeko",
   "license": "MIT",
   "private": true,
@@ -70,6 +70,12 @@
         "title": "New Project",
         "category": "Threadbox",
         "icon": "$(new-folder)"
+      },
+      {
+        "command": "threadbox.newThreadInProject",
+        "title": "New Task",
+        "category": "Threadbox",
+        "icon": "$(add)"
       },
       {
         "command": "threadbox.renameProject",
@@ -208,12 +214,17 @@
         },
         {
           "command": "threadbox.renameProject",
-          "when": "view =~ /^threadbox\\.sidebar/ && viewItem == threadbox.project.threadbox",
+          "when": "view =~ /^threadbox\\.sidebar/ && viewItem =~ /^threadbox\\.project\\.(threadbox|official)\\.mutable$/",
           "group": "inline@1"
         },
         {
+          "command": "threadbox.newThreadInProject",
+          "when": "view =~ /^threadbox\\.sidebar/ && viewItem =~ /^threadbox\\.project\\.(threadbox|official)\\.(mutable|readonly)$/",
+          "group": "inline@0"
+        },
+        {
           "command": "threadbox.deleteProject",
-          "when": "view =~ /^threadbox\\.sidebar/ && viewItem == threadbox.project.threadbox",
+          "when": "view =~ /^threadbox\\.sidebar/ && viewItem =~ /^threadbox\\.project\\.(threadbox|official)\\.mutable$/",
           "group": "project@2"
         },
         {

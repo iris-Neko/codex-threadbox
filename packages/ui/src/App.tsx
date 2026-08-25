@@ -35,6 +35,7 @@ import type {
   ThreadRecord
 } from '../../../src/shared/contracts'
 import { DeleteDialog } from './components/DeleteDialog'
+import { CreateThreadDialog } from './components/CreateThreadDialog'
 import { ProjectDialog } from './components/ProjectDialog'
 import { RecentsRepairDialog } from './components/RecentsRepairDialog'
 import { SettingsDialog } from './components/SettingsDialog'
@@ -135,6 +136,7 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
   const [deleteIds, setDeleteIds] = useState<string[] | null>(null)
   const [recentsRepairOpen, setRecentsRepairOpen] = useState(false)
   const [projectDialog, setProjectDialog] = useState<ProjectRecord | 'new' | null>(null)
+  const [threadProject, setThreadProject] = useState<ProjectRecord | null>(null)
 
   const refresh = useCallback(async (): Promise<void> => {
     setLoading(true)
@@ -287,11 +289,13 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
   )
 
   const runProjectOperation = useCallback(
-    async (operation: () => Promise<ProjectSnapshot>, closeDialog = false): Promise<void> => {
+    async (operation: () => Promise<ProjectSnapshot | null>, closeDialog = false): Promise<void> => {
       setBusy(true)
       setError(null)
       try {
-        setProjects(await operation())
+        const snapshot = await operation()
+        if (!snapshot) return
+        setProjects(snapshot)
         setNotice(t('projectUpdated'))
         setSelected(new Set())
         if (closeDialog) setProjectDialog(null)
@@ -303,6 +307,26 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
     },
     [t]
   )
+
+  const createThread = async (project: ProjectRecord, name: string): Promise<void> => {
+    if (!api.createThreadInProject) {
+      setError(t('projectThreadCreationUnavailable'))
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      const created = await api.createThreadInProject(project.id, name)
+      setThreadProject(null)
+      if (!created) return
+      setNotice(t('threadCreated', { name: created.name }))
+      await refresh()
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t('operationFailed'))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const repairDesktopRecents = async (): Promise<void> => {
     setBusy(true)
@@ -751,6 +775,8 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
             someSelectableSelected={someSelectableSelected}
             allowOpenDirectory={platform.openWorkingDirectory}
             allowActiveSelection={platform.projectManagement}
+            allowProjectThreadCreation={Boolean(platform.projectThreadCreation)}
+            projectMutationDisabled={busy}
             onToggle={toggleThread}
             onToggleVisible={toggleVisible}
             onToggleExpanded={toggleExpanded}
@@ -769,6 +795,7 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
               )
             }
             onDelete={(thread) => setDeleteIds([thread.id])}
+            onCreateThread={(project) => setThreadProject(project)}
             onRenameProject={(project) => setProjectDialog(project)}
             onDeleteProject={(project) => {
               if (window.confirm(t('deleteProjectConfirm', { name: project.name }))) {
@@ -811,14 +838,29 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
       {projectDialog && (
         <ProjectDialog
           initialName={projectDialog === 'new' ? undefined : projectDialog.name}
+          initialKind={projectDialog === 'new' ? undefined : projectDialog.kind}
+          allowOfficial={Boolean(
+            projects.canManageOfficialProjects && api.createOfficialProject
+          )}
           busy={busy}
           onClose={() => setProjectDialog(null)}
-          onSubmit={(name) => void runProjectOperation(
+          onSubmit={(name, kind) => void runProjectOperation(
             () => projectDialog === 'new'
-              ? api.createProject(name)
+              ? kind === 'official' && api.createOfficialProject
+                ? api.createOfficialProject(name)
+                : api.createProject(name)
               : api.renameProject(projectDialog.id, name),
             true
           )}
+        />
+      )}
+
+      {threadProject && (
+        <CreateThreadDialog
+          project={threadProject}
+          busy={busy}
+          onClose={() => setThreadProject(null)}
+          onSubmit={(name) => void createThread(threadProject, name)}
         />
       )}
 

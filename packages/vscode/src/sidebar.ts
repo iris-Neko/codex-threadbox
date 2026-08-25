@@ -31,6 +31,9 @@ interface SidebarLabels {
   workspaceTrust: string
   unavailable: string
   newProject: string
+  newThread: string
+  threadName: string
+  threadCreated: string
   projectName: string
   renameProject: string
   deleteProject: string
@@ -54,6 +57,7 @@ function labels(locale: string): SidebarLabels {
       settings: '打开设置', ready: '就绪', projects: '项目',
       unassigned: '未归属', archived: '已归档', workspaceTrust: '需要信任工作区才能读取 Codex 任务',
       unavailable: 'Codex CLI 不可用', newProject: '新建项目', projectName: '项目名称',
+      newThread: '新建对话', threadName: '对话名称', threadCreated: '已创建对话',
       renameProject: '重命名项目', deleteProject: '删除项目',
       deleteProjectConfirm: '只删除项目分组，任务会变为未归属。', moveToProject: '移动到项目',
       removeFromProject: '移出 Threadbox 项目', deleteTasksConfirm: '任务记录将永久删除，工作目录会保留。',
@@ -67,6 +71,7 @@ function labels(locale: string): SidebarLabels {
     settings: 'Open Settings', ready: 'Ready', projects: 'Projects',
     unassigned: 'Unassigned', archived: 'Archived', workspaceTrust: 'Trust this workspace to read Codex tasks',
     unavailable: 'Codex CLI unavailable', newProject: 'New project', projectName: 'Project name',
+    newThread: 'New task', threadName: 'Task name', threadCreated: 'Task created',
     renameProject: 'Rename project', deleteProject: 'Delete project',
     deleteProjectConfirm: 'Only the project grouping will be deleted. Tasks will become unassigned.',
     moveToProject: 'Move to project', removeFromProject: 'Remove from Threadbox project',
@@ -203,7 +208,7 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
   async handleDrop(target: SidebarItem | undefined, dataTransfer: vscode.DataTransfer): Promise<void> {
     const item = dataTransfer.get(TREE_MIME)
     if (!item || !target || (target.kind !== 'project' && target.kind !== 'unassigned') ||
-      target.project?.readOnly) return
+      (target.kind === 'project' && target.project?.kind !== 'threadbox')) return
     try {
       const value: unknown = JSON.parse(await item.asString())
       if (!Array.isArray(value) || !value.every((id) => typeof id === 'string')) return
@@ -217,16 +222,66 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
 
   async createProject(): Promise<void> {
     const copy = labels(this.locale)
+    let kind: 'official' | 'threadbox' = 'threadbox'
+    if (this.snapshot.canManageOfficialProjects && this.api.createOfficialProject) {
+      const choice = await vscode.window.showQuickPick([
+        { label: copy.officialProject, projectKind: 'official' as const },
+        { label: copy.threadboxProject, projectKind: 'threadbox' as const }
+      ], { placeHolder: copy.newProject })
+      if (!choice) return
+      kind = choice.projectKind
+    }
     const name = await vscode.window.showInputBox({ prompt: copy.newProject, placeHolder: copy.projectName })
     if (!name?.trim()) return
-    try { this.updateSnapshot(await this.api.createProject(name)); this.redraw() }
+    try {
+      const snapshot = kind === 'official' && this.api.createOfficialProject
+        ? await this.api.createOfficialProject(name)
+        : await this.api.createProject(name)
+      if (!snapshot) return
+      this.updateSnapshot(snapshot)
+      this.redraw()
+    }
     catch (error) { await this.showError(error) }
+  }
+
+  async createThread(item?: SidebarItem): Promise<void> {
+    const project = item?.project
+    if (!project) return
+    if (!project.canCreateThread || !this.api.createThreadInProject) {
+      await vscode.window.showWarningMessage(project.createThreadUnavailableReason ??
+        'Creating tasks in this project is unavailable.')
+      return
+    }
+    const copy = labels(this.locale)
+    const name = await vscode.window.showInputBox({
+      prompt: copy.newThread,
+      placeHolder: copy.threadName,
+      validateInput: (value) => {
+        if (!value.trim()) return copy.threadName
+        if (value.length > 512 || [...value].some((character) => character.charCodeAt(0) < 32)) {
+          return copy.threadName
+        }
+        return null
+      }
+    })
+    if (!name?.trim()) return
+    try {
+      const created = await this.api.createThreadInProject(project.id, name)
+      if (!created) return
+      await vscode.window.showInformationMessage(`${copy.threadCreated}: ${created.name}`)
+      this.refresh()
+    } catch (error) { await this.showError(error) }
   }
 
   async renameProject(item?: SidebarItem): Promise<void> {
     const project = item?.project
-    if (!project || project.readOnly) return
+    if (!project) return
     const copy = labels(this.locale)
+    if (project.readOnly) {
+      await vscode.window.showWarningMessage(
+        this.snapshot.officialProjectManagementUnavailableReason ?? copy.unavailable)
+      return
+    }
     const name = await vscode.window.showInputBox({
       prompt: copy.renameProject, value: project.name, valueSelection: [0, project.name.length]
     })
@@ -237,8 +292,13 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
 
   async deleteProject(item?: SidebarItem): Promise<void> {
     const project = item?.project
-    if (!project || project.readOnly) return
+    if (!project) return
     const copy = labels(this.locale)
+    if (project.readOnly) {
+      await vscode.window.showWarningMessage(
+        this.snapshot.officialProjectManagementUnavailableReason ?? copy.unavailable)
+      return
+    }
     const confirmed = await vscode.window.showWarningMessage(
       `${copy.deleteProjectConfirm}\n\n${project.name}`, { modal: true }, copy.deleteProject)
     if (confirmed !== copy.deleteProject) return
@@ -422,18 +482,20 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
         id: `threadbox:project:${project.id}`,
         description: String(this.visibleCount(threads)), icon: 'folder-library',
         tooltip: copy.threadboxProject, children: this.projectChildren(threads, copy, project.id, allThreads),
-        contextValue: 'threadbox.project.threadbox', project })]
+        contextValue: 'threadbox.project.threadbox.mutable', project })]
     })
     for (const group of groups.filter((item) => item.kind === 'desktopProject')) {
       const threads = filterSidebarThreads(group.threads, query, group.name)
       if (query && threads.length === 0 && !group.name.toLocaleLowerCase().includes(normalizedQuery)) continue
       const project = group.project ?? { id: group.projectId ?? group.id, name: group.name,
-        kind: 'official' as const, readOnly: true, createdAt: null, updatedAt: null }
+        kind: 'official' as const, readOnly: true, codexProjectId: null, roots: [],
+        canCreateThread: false, createThreadUnavailableReason: copy.unavailable,
+        createdAt: null, updatedAt: null }
       projectItems.push(new SidebarItem(group.name, { kind: 'project',
         id: `threadbox:project:${group.id}`,
         description: String(this.visibleCount(threads)), icon: 'folder-library',
         tooltip: copy.officialProject, children: this.projectChildren(threads, copy, group.id, group.threads),
-        contextValue: 'threadbox.project.official', project }))
+        contextValue: `threadbox.project.official.${project.readOnly ? 'readonly' : 'mutable'}`, project }))
     }
     const unassignedMatches = copy.unassigned.toLocaleLowerCase().includes(normalizedQuery)
     const unassignedGroups = groups.filter((group) =>
@@ -463,7 +525,7 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
       id: 'threadbox:no-results', kind: 'status', icon: 'search-stop', tooltip: copy.noResults
     })]
     return [...this.environmentItems(result.environment, copy), new SidebarItem(copy.projects, {
-      id: 'threadbox:projects', kind: 'section', description: String(customProjects.length),
+      id: 'threadbox:projects', kind: 'section', description: String(this.snapshot.projects.length),
       icon: 'project', children,
       contextValue: 'threadbox.projects'
     })]

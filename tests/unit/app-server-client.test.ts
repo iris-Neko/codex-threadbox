@@ -44,6 +44,18 @@ describe('AppServerClient', () => {
     })
   })
 
+  it('sends optional initialize capabilities only for opted-in hosts', async () => {
+    const client = new AppServerClient(runtime(), {
+      ...descriptor,
+      initializeCapabilities: { experimentalApi: true, requestAttestation: false }
+    })
+    clients.push(client)
+
+    await expect(client.request('test/initialize')).resolves.toMatchObject({
+      capabilities: { experimentalApi: true, requestAttestation: false }
+    })
+  })
+
   it('times out unanswered requests', async () => {
     const client = new AppServerClient(runtime(), descriptor)
     clients.push(client)

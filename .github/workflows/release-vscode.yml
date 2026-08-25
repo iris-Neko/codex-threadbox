@@ -77,19 +77,14 @@ jobs:
         with:
           name: vscode-extension
           path: release-artifacts
+      - name: Require extension marketplace tokens
+        run: |
+          test -n "$VSCE_PAT"
+          test -n "$OVSX_PAT"
       - name: Resolve VSIX
         run: echo "VSIX=$(find release-artifacts -maxdepth 1 -name '*.vsix' -print -quit)" >> "$GITHUB_ENV"
       - name: Publish VS Code Marketplace extension
-        if: env.VSCE_PAT != ''
         run: npx --yes @vscode/vsce@3.6.2 publish --packagePath "$VSIX" --pat "$VSCE_PAT"
-      - name: Verify manually published VS Code Marketplace extension
-        if: env.VSCE_PAT == ''
-        run: |
-          VERSION=$(node -p "require('./packages/vscode/package.json').version")
-          npx --yes @vscode/vsce@3.6.2 show irisNeko.codex-threadbox-vscode --json > marketplace.json
-          node -e "const e=require('./marketplace.json');if(!e.versions?.some(v=>v.version===process.argv[1]))process.exit(1)" "$VERSION"
-      - name: Require Open VSX token
-        run: test -n "$OVSX_PAT"
       - name: Publish Open VSX extension
         run: npx --yes ovsx@0.10.7 publish "$VSIX" --pat "$OVSX_PAT"
 

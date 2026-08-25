@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname } from 'node:path'
 import type { ProjectRecord, ProjectSnapshot, ThreadRecord } from '../../../src/shared/contracts'
+import type { Project } from '../../../src/shared/protocol/generated/v2/Project'
+import type { CodexProjectCatalog } from './codex-projects'
 
 const SCHEMA_VERSION = 1
 const MAX_PROJECT_NAME = 80
@@ -86,16 +88,45 @@ function rootId(thread: ThreadRecord, byId: Map<string, ThreadRecord>): string {
   return current.id
 }
 
-function officialProjects(threads: ThreadRecord[]): ProjectRecord[] {
+function pathKey(path: string): string {
+  const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '')
+  return /^[a-z]:\//i.test(normalized) || normalized.startsWith('//')
+    ? normalized.toLocaleLowerCase()
+    : normalized
+}
+
+function uniquePaths(paths: readonly string[]): string[] {
+  const seen = new Set<string>()
+  return paths.filter((path) => {
+    const key = pathKey(path)
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function inferredOfficialProjects(
+  threads: ThreadRecord[],
+  unavailableReason: string
+): ProjectRecord[] {
   const seen = new Map<string, ProjectRecord>()
   for (const thread of threads) {
-    if (!thread.projectId || seen.has(thread.projectId)) continue
+    if (!thread.projectId) continue
+    const existing = seen.get(thread.projectId)
+    if (existing) {
+      existing.roots = uniquePaths([...existing.roots, thread.cwd])
+      continue
+    }
     const directory = thread.cwd.replace(/[\\/]+$/, '')
     seen.set(thread.projectId, {
       id: `official:${thread.projectId}`,
       name: basename(directory) || thread.projectId,
       kind: 'official',
       readOnly: true,
+      codexProjectId: thread.projectId,
+      roots: [thread.cwd],
+      canCreateThread: false,
+      createThreadUnavailableReason: unavailableReason,
       createdAt: null,
       updatedAt: null
     })
@@ -103,16 +134,36 @@ function officialProjects(threads: ThreadRecord[]): ProjectRecord[] {
   return [...seen.values()].toSorted((left, right) => left.name.localeCompare(right.name))
 }
 
+function catalogProject(project: Project): ProjectRecord {
+  return {
+    id: `official:${project.id}`,
+    name: project.name,
+    kind: 'official',
+    readOnly: false,
+    codexProjectId: project.id,
+    roots: uniquePaths(project.roots.map((root) => String(root.path))),
+    canCreateThread: true,
+    createThreadUnavailableReason: null,
+    createdAt: project.createdAt,
+    updatedAt: project.updatedAt
+  }
+}
+
 export class ProjectStore {
   private data: ProjectFile | null = null
   private loading: Promise<ProjectFile> | null = null
   private threads: ThreadRecord[] = []
+  private codexProjects: CodexProjectCatalog | null = null
   private writeQueue: Promise<void> = Promise.resolve()
 
   constructor(private readonly filePath: string) {}
 
-  async setInventory(threads: ThreadRecord[]): Promise<ProjectSnapshot> {
+  async setInventory(
+    threads: ThreadRecord[],
+    codexProjects?: CodexProjectCatalog
+  ): Promise<ProjectSnapshot> {
     this.threads = threads
+    if (codexProjects !== undefined) this.codexProjects = codexProjects
     const data = await this.load()
     const validRoots = new Set<string>()
     const byId = new Map(threads.map((thread) => [thread.id, thread]))
@@ -132,6 +183,10 @@ export class ProjectStore {
 
   async list(): Promise<ProjectSnapshot> {
     return this.snapshot(await this.load())
+  }
+
+  async getProject(id: string): Promise<ProjectRecord | null> {
+    return (await this.list()).projects.find((project) => project.id === id) ?? null
   }
 
   async create(name: string): Promise<ProjectSnapshot> {
@@ -189,6 +244,16 @@ export class ProjectStore {
     return this.snapshot(data)
   }
 
+  async assignCreatedThread(threadId: string, projectId: string): Promise<void> {
+    if (!threadId) throw new Error('Task ID must not be empty.')
+    const data = await this.load()
+    if (!data.projects.some((project) => project.id === projectId)) {
+      throw new Error('Threadbox project not found.')
+    }
+    data.assignments[threadId] = projectId
+    await this.save(data)
+  }
+
   private ensureUnique(data: ProjectFile, name: string, excludedId?: string): void {
     const key = name.toLocaleLowerCase()
     if (data.projects.some((project) => project.id !== excludedId &&
@@ -237,12 +302,40 @@ export class ProjectStore {
     const custom: ProjectRecord[] = data.projects.map((project) => ({
       ...project,
       kind: 'threadbox',
-      readOnly: false
+      readOnly: false,
+      codexProjectId: null,
+      roots: uniquePaths(Object.entries(data.assignments)
+        .filter(([, projectId]) => projectId === project.id)
+        .map(([threadId]) => this.threads.find((thread) => thread.id === threadId)?.cwd)
+        .filter((path): path is string => Boolean(path))),
+      canCreateThread: true,
+      createThreadUnavailableReason: null
     }))
+    const unavailableReason = this.codexProjects?.message ??
+      'This Codex environment cannot list official project roots. Existing tasks remain available.'
+    const inferred = inferredOfficialProjects(this.threads, unavailableReason)
+    const official = this.codexProjects?.available
+      ? this.mergeOfficialProjects(this.codexProjects.projects.map(catalogProject), inferred)
+      : inferred
     return {
-      projects: [...custom, ...officialProjects(this.threads)],
+      projects: [...custom, ...official],
       assignments: { ...data.assignments },
-      refreshedAt: Date.now()
+      refreshedAt: Date.now(),
+      canManageOfficialProjects: this.codexProjects?.available ?? false,
+      officialProjectManagementUnavailableReason: this.codexProjects?.available
+        ? null
+        : unavailableReason
     }
+  }
+
+  private mergeOfficialProjects(
+    catalog: ProjectRecord[],
+    inferred: ProjectRecord[]
+  ): ProjectRecord[] {
+    const merged = new Map(catalog.map((project) => [project.id, project]))
+    for (const project of inferred) {
+      if (!merged.has(project.id)) merged.set(project.id, project)
+    }
+    return [...merged.values()].toSorted((left, right) => left.name.localeCompare(right.name))
   }
 }
