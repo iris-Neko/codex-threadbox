@@ -58,7 +58,7 @@ jobs:
           rm dist/npm-pack.json
           cd dist
           sha256sum *.tgz > SHA256SUMS.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: cli-package
           if-no-files-found: error
