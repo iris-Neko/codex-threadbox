@@ -1,6 +1,7 @@
 const readline = require('node:readline')
 
 let initialized = false
+let initializeParams = null
 const reader = readline.createInterface({ input: process.stdin })
 
 function send(message) {
@@ -16,6 +17,7 @@ reader.on('line', (line) => {
   }
 
   if (message.method === 'initialize') {
+    initializeParams = message.params
     send({ id: message.id, result: { userAgent: 'fake', platformFamily: 'test', platformOs: 'test' } })
     return
   }
@@ -26,6 +28,10 @@ reader.on('line', (line) => {
   if (message.method === 'test/echo') {
     send({ method: 'thread/status/changed', params: { threadId: 'ignored' } })
     send({ id: message.id, result: { initialized, value: message.params } })
+    return
+  }
+  if (message.method === 'test/initialize') {
+    send({ id: message.id, result: initializeParams })
     return
   }
   if (message.method === 'test/timeout') return

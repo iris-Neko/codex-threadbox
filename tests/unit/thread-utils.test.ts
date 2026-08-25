@@ -101,9 +101,11 @@ describe('filterThreads', () => {
     const projects: ProjectSnapshot = {
       projects: [
         { id: 'threadbox:focus', name: 'Focus', kind: 'threadbox', readOnly: false,
-          createdAt: 1, updatedAt: 1 },
+          codexProjectId: null, roots: ['/work'], canCreateThread: true,
+          createThreadUnavailableReason: null, createdAt: 1, updatedAt: 1 },
         { id: 'official:official-1', name: 'Official', kind: 'official', readOnly: true,
-          createdAt: null, updatedAt: null }
+          codexProjectId: 'official-1', roots: ['/work'], canCreateThread: true,
+          createThreadUnavailableReason: null, createdAt: null, updatedAt: null }
       ],
       assignments: { task: 'threadbox:focus' },
       refreshedAt: 1
@@ -124,7 +126,8 @@ describe('filterThreads', () => {
   it('keeps empty Threadbox projects available for management', () => {
     const projects: ProjectSnapshot = {
       projects: [{ id: 'threadbox:empty', name: 'Empty', kind: 'threadbox', readOnly: false,
-        createdAt: 1, updatedAt: 1 }],
+        codexProjectId: null, roots: [], canCreateThread: true,
+        createThreadUnavailableReason: null, createdAt: 1, updatedAt: 1 }],
       assignments: {}, refreshedAt: 1
     }
     expect(groupThreads([], projects)).toMatchObject([
@@ -132,6 +135,18 @@ describe('filterThreads', () => {
     ])
     expect(groupThreadRows([], [], projects)).toMatchObject([
       { kind: 'threadboxProject', name: 'Empty', rows: [], taskCount: 0 }
+    ])
+  })
+
+  it('keeps empty official projects available for creating tasks', () => {
+    const projects: ProjectSnapshot = {
+      projects: [{ id: 'official:empty', name: 'Official empty', kind: 'official', readOnly: true,
+        codexProjectId: 'empty', roots: ['/work/empty'], canCreateThread: true,
+        createThreadUnavailableReason: null, createdAt: 1, updatedAt: 1 }],
+      assignments: {}, refreshedAt: 1
+    }
+    expect(groupThreadRows([], [], projects)).toMatchObject([
+      { kind: 'desktopProject', name: 'Official empty', rows: [], taskCount: 0 }
     ])
   })
 

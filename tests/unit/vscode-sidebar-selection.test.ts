@@ -61,11 +61,14 @@ describe('VS Code sidebar task selection', () => {
   it('builds sorted manual targets and only offers removal for assigned roots', () => {
     const projects = [
       { id: 'official', name: 'Official', kind: 'official' as const, readOnly: true,
-        createdAt: null, updatedAt: null },
+        codexProjectId: 'official', roots: ['/work'], canCreateThread: true,
+        createThreadUnavailableReason: null, createdAt: null, updatedAt: null },
       { id: 'beta', name: 'Beta', kind: 'threadbox' as const, readOnly: false,
-        createdAt: 1, updatedAt: 1 },
+        codexProjectId: null, roots: [], canCreateThread: true,
+        createThreadUnavailableReason: null, createdAt: 1, updatedAt: 1 },
       { id: 'alpha', name: 'Alpha', kind: 'threadbox' as const, readOnly: false,
-        createdAt: 1, updatedAt: 1 }
+        codexProjectId: null, roots: [], canCreateThread: true,
+        createThreadUnavailableReason: null, createdAt: 1, updatedAt: 1 }
     ]
 
     expect(manualMoveTargets(projects, {}, ['root'])).toEqual([

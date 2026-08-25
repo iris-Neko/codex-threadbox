@@ -1,11 +1,13 @@
 import { createInterface, type Interface } from 'node:readline'
 import { spawnSync, type ChildProcess } from 'node:child_process'
+import type { InitializeCapabilities } from '../../../src/shared/protocol/generated/InitializeCapabilities'
 import type { CodexRuntimeLike, RuntimeProbe } from './codex-runtime'
 
 export interface AppServerClientDescriptor {
   name: string
   title: string
   version: string
+  initializeCapabilities?: InitializeCapabilities
 }
 
 interface RpcSuccess<T> {
@@ -115,13 +117,17 @@ export class AppServerClient implements RpcClientLike {
       }
     })
 
-    await this.sendRequest('initialize', {
+    const initializeParams: Record<string, unknown> = {
       clientInfo: {
         name: this.descriptor.name,
         title: this.descriptor.title,
         version: this.descriptor.version
       }
-    })
+    }
+    if (this.descriptor.initializeCapabilities) {
+      initializeParams.capabilities = this.descriptor.initializeCapabilities
+    }
+    await this.sendRequest('initialize', initializeParams)
     this.sendNotification('initialized', {})
   }
 

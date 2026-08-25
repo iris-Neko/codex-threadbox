@@ -28,9 +28,11 @@ const METHODS = new Set<RpcMethod>([
   'setPinned',
   'listProjects',
   'createProject',
+  'createOfficialProject',
   'renameProject',
   'deleteProject',
   'assignThreads',
+  'createThreadInProject',
   'openWorkingDirectory',
   'copyThreadId',
   'chooseCliPath',
@@ -46,6 +48,11 @@ function isString(value: unknown, maximum = 32_768): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= maximum
 }
 
+function isVisibleString(value: unknown, maximum: number): value is string {
+  return isString(value, maximum) && value.trim().length > 0 &&
+    [...value].every((character) => character.charCodeAt(0) >= 32)
+}
+
 function isIds(value: unknown): value is string[] {
   return Array.isArray(value) && value.length > 0 && value.length <= 10_000 &&
     value.every((item) => isString(item, 512))
@@ -58,19 +65,21 @@ function validArgs(method: RpcMethod, args: unknown[]): boolean {
   if (method === 'setPinned') {
     return args.length === 2 && isIds(args[0]) && typeof args[1] === 'boolean'
   }
-  if (method === 'createProject') {
-    return args.length === 1 && isString(args[0], 80) && args[0].trim().length > 0
+  if (method === 'createProject' || method === 'createOfficialProject') {
+    return args.length === 1 && isVisibleString(args[0], 80)
   }
   if (method === 'renameProject') {
-    return args.length === 2 && isString(args[0], 128) && isString(args[1], 80) &&
-      args[1].trim().length > 0
+    return args.length === 2 && isVisibleString(args[0], 512) && isVisibleString(args[1], 80)
   }
   if (method === 'deleteProject') {
-    return args.length === 1 && isString(args[0], 128)
+    return args.length === 1 && isVisibleString(args[0], 512)
   }
   if (method === 'assignThreads') {
     return args.length === 2 && isIds(args[0]) &&
       (args[1] === null || isString(args[1], 128))
+  }
+  if (method === 'createThreadInProject') {
+    return args.length === 2 && isVisibleString(args[0], 512) && isVisibleString(args[1], 512)
   }
   if (method === 'deleteThreads') {
     return args.length === 2 && isIds(args[0]) && isObject(args[1]) &&

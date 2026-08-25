@@ -10,7 +10,7 @@ release workflow unless the request explicitly requires it.
 | --- | --- | --- | --- |
 | Desktop | `0.3.0` | `src/`, Electron configuration, desktop packaging | `v<version>` |
 | CLI | `0.3.1` | `packages/cli/` | `cli-v<version>` |
-| VS Code | `0.4.1` | `packages/vscode/` | `vscode-v<version>` |
+| VS Code | `0.5.0` | `packages/vscode/` | `vscode-v<version>` |
 
 The desktop version comes from the root `package.json`. The CLI and VS Code
 versions come only from their own package manifests. Do not synchronize these
@@ -61,7 +61,9 @@ to shared packages.
   allowlist, request IDs, timeouts, and runtime argument validation.
 - Threadbox projects contain only names and root task IDs in
   `globalStorageUri`. They are manual, host-local assignments and must not alter
-  official Codex project data.
+  official Codex project data. Official project creation, rename, and deletion
+  must use the experimental App Server project API; deleting a project must
+  preserve its tasks and working directories.
 - The sidebar is the primary workflow. Preserve spawned-task folding and open
   tasks in the official Codex view when that integration is available.
 

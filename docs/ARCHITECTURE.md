@@ -39,6 +39,8 @@ The Webview has a strict nonce CSP, bundled local resources, no Node access, req
 
 Project names and root-task assignments use a versioned JSON file under the remote extension host's `globalStorageUri`. Writes use temporary-file replacement; corrupt files are preserved with a timestamped suffix before an empty catalog is created. The data is isolated per extension host, contains no transcript content, and is not synchronized between servers.
 
+The VS Code host opts into the App Server experimental project API to read and manage official project names and roots. Official project creation, rename, and deletion use `project/create`, `project/update`, and `project/delete`; App Server preserves project tasks and clears their official assignment when a project is deleted. Threadbox can create an empty thread with `thread/start`, name it with `thread/name/set`, and either pass the official `projectId` or store a Threadbox-local assignment. If project discovery is unavailable, existing official tasks remain usable while official project mutation and creation in that project are disabled.
+
 ## Deletion safety
 
 Permanent deletion refreshes inventory first. Running and pinned tasks are skipped. If a parent and descendant are selected, only the highest selected parent is submitted because App Server deletion cascades. Requests run sequentially, and one failure does not stop the remaining tasks.
