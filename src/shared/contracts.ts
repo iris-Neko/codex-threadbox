@@ -138,8 +138,6 @@ export interface ProjectSnapshot {
   projects: ProjectRecord[]
   assignments: Record<string, string>
   refreshedAt: number
-  canManageOfficialProjects?: boolean
-  officialProjectManagementUnavailableReason?: string | null
 }
 
 export interface PlatformCapabilities {
@@ -152,6 +150,7 @@ export interface PlatformCapabilities {
   currentWorkspaceDirectories: string[]
   projectThreadCreation?: boolean
   taskTrash?: boolean
+  workspaceProjectImport?: boolean
 }
 
 export interface CreatedProjectThread {
@@ -175,7 +174,7 @@ export interface ThreadboxApi {
   setPinned(ids: string[], pinned: boolean): Promise<BatchOperationResult>
   listProjects(): Promise<ProjectSnapshot>
   createProject(name: string): Promise<ProjectSnapshot>
-  createOfficialProject?(name: string): Promise<ProjectSnapshot | null>
+  importCurrentWorkspaceProject?(): Promise<ProjectSnapshot | null>
   renameProject(id: string, name: string): Promise<ProjectSnapshot>
   deleteProject(id: string): Promise<ProjectSnapshot>
   assignThreads(ids: string[], projectId: string | null): Promise<ProjectSnapshot>

@@ -14,7 +14,7 @@ Threadbox is an npm workspace with shared core and UI packages plus three host a
 
 `@threadbox/ui` is the React task manager. It receives an injected typed `ThreadboxApi`; it has no Electron, VS Code, filesystem, or Node dependency. `PlatformCapabilities` hides host-only controls such as desktop Recents repair, directory Trash, VS Code task Trash, native executable selection, and current-workspace filtering.
 
-Desktop Project tasks are grouped by `projectId`, and projectless tasks fall back to working-directory groups. VS Code can overlay a Threadbox-owned project assignment on a root task without changing its official `projectId`; removing the overlay restores the official or directory group. Spawned tasks fold under their parent row and inherit their root task's Threadbox project.
+Desktop Project tasks are grouped by `projectId`, and projectless tasks fall back to working-directory groups. VS Code overlays a Threadbox-owned project assignment on a root task without changing its protocol `projectId`; host-owned project IDs that have no Threadbox record fall back to working-directory groups. Spawned tasks fold under their parent row and inherit their root task's Threadbox project.
 
 ## Desktop host
 
@@ -33,15 +33,15 @@ The CLI accepts task IDs only for mutations. It does not contain the desktop Rec
 
 ## VS Code host
 
-The extension declares `extensionKind: ["workspace"]`, so Remote SSH, Dev Containers, and Codespaces run the extension, Codex CLI, App Server, and `CODEX_HOME` on the remote host. Its Activity Bar tree provides in-memory metadata search and manual project assignment; it opens the shared UI in an editor Webview for the full manager.
+The extension declares `extensionKind: ["workspace"]`, so Remote SSH, Dev Containers, and Codespaces run the extension, Codex CLI, App Server, and `CODEX_HOME` on the remote host. Its Activity Bar tree provides in-memory metadata search, current-workspace import, and manual project assignment; it opens the shared UI in an editor Webview for the full manager.
 
 The Webview has a strict nonce CSP, bundled local resources, no Node access, request IDs, timeouts, a fixed method allowlist, and per-method argument validation. The extension rechecks workspace trust before any Codex probe, task listing, mutation, or folder-open request. Machine-scoped settings configure the remote CLI path, Codex home, and language.
 
-Project names and root-task assignments use a versioned JSON file under the remote extension host's `globalStorageUri`. Writes use temporary-file replacement; corrupt files are preserved with a timestamped suffix before an empty catalog is created. The data is isolated per extension host, contains no transcript content, and is not synchronized between servers.
+Project names and root-task assignments use a versioned JSON file under the remote extension host's `globalStorageUri`. Workspace import matches root-task working directories against every open workspace folder and writes project creation plus all assignments in one temporary-file replacement; cancellation and empty matches do not write. Corrupt files are preserved with a timestamped suffix before an empty catalog is created. The data is isolated per extension host, contains no transcript content, and is not synchronized between servers.
 
 The same host-local project file contains a built-in Trash assignment and the previous Threadbox project ID for each trashed root task. A legacy project named `trash` is promoted in place. Moving a task to Trash first applies the normal refreshed running/pinned protection, archives it through App Server, and then writes the local assignment. Restore unarchives the task and returns it to the recorded Threadbox project when it still exists. Either operation rolls back the App Server state if the local write fails. Empty Trash permanently deletes only the roots currently assigned to Trash, using the shared protected deletion path, and never deletes working directories.
 
-The VS Code host opts into the App Server experimental project API to read and manage official project names and roots. Official project creation, rename, and deletion use `project/create`, `project/update`, and `project/delete`; App Server preserves project tasks and clears their official assignment when a project is deleted. Threadbox can create an empty thread with `thread/start`, name it with `thread/name/set`, and either pass the official `projectId` or store a Threadbox-local assignment. If project discovery is unavailable, existing official tasks remain usable while official project mutation and creation in that project are disabled.
+Codex interface projects are not currently exposed by the public App Server, so the VS Code host does not issue `project/*` requests or present those definitions as manageable projects. Tasks carrying an unknown host-owned `projectId` remain usable, are grouped by working directory, and still open in Codex. Creating a blank task in a Threadbox project uses `thread/start({ cwd })`, then `thread/name/set`, and finally stores the local root-task assignment; a naming or assignment failure deletes the new empty task.
 
 ## Deletion safety
 

@@ -17,6 +17,7 @@ const fakeCli = resolve(
   process.platform === 'win32' ? 'codex.cmd' : 'codex'
 )
 const vsix = resolve(packageRoot, `../../dist/threadbox-for-codex-${manifest.version}.vsix`)
+const fakeLog = join(workspace, 'fake-app-server.log')
 
 try {
   const vscodeExecutablePath = await downloadAndUnzipVSCode('stable')
@@ -27,6 +28,8 @@ try {
   )
   process.env.THREADBOX_TEST_FAKE_CLI = fakeCli
   process.env.THREADBOX_TEST_DISABLE_PROCESS_SCAN = '1'
+  process.env.THREADBOX_FAKE_WORKSPACE = workspace
+  process.env.THREADBOX_FAKE_LOG = fakeLog
   await runTests({
     vscodeExecutablePath,
     extensionDevelopmentPath: packageRoot,
@@ -72,6 +75,8 @@ try {
   process.stdout.write('VS Code extension and installed VSIX smoke tests passed.\n')
 } finally {
   delete process.env.THREADBOX_TEST_FAKE_CLI
+  delete process.env.THREADBOX_FAKE_WORKSPACE
+  delete process.env.THREADBOX_FAKE_LOG
   await rm(workspace, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   await rm(installation, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 }

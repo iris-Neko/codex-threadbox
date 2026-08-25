@@ -15,7 +15,7 @@ Threadbox 将所有工作目录中的 Codex 任务记录汇总到一个可搜索
 - 跨工作目录列出活动和归档任务。
 - 搜索标题、摘要、路径、来源和任务 ID。
 - 桌面端聊天按 Project 聚合，VS Code/CLI 聊天按实际工作目录聚合，未加入 Project 的桌面端聊天归入独立任务。
-- 可直接在 VS Code 的 Codex 侧边栏中把本机或远端任务整理为 Threadbox 项目，支持拖放和多选操作。
+- 可直接在 VS Code 的 Codex 侧边栏中导入当前工作区，把本机或远端任务整理为 Threadbox 项目，并支持拖放和多选操作。
 - 支持分组/平铺视图，并可按项目或工作区、归档状态、来源、目录和更新时间筛选。
 - 单项或批量归档、取消归档和删除；VS Code 在永久删除前提供可恢复的任务垃圾箱。
 - 可逐个选择将工作目录移入系统回收站，同时保留其他任务的代码。
@@ -34,7 +34,7 @@ Threadbox 将所有工作目录中的 Codex 任务记录汇总到一个可搜索
 | --- | --- | --- | --- |
 | 列表、搜索、分组、归档、置顶和删除任务记录 | 支持 | 支持 | 支持 |
 | 管理 Remote SSH、Dev Container 或 Codespaces 所在主机 | 不支持 | 支持 | 支持 |
-| 创建当前主机专属的任务项目 | 不支持 | 不支持 | 支持 |
+| 创建或导入当前主机专属的任务项目 | 不支持 | 不支持 | 支持 |
 | 从内置任务垃圾箱恢复任务 | 不支持 | 不支持 | 支持 |
 | 打开任务工作目录 | 支持 | 不支持 | 支持 |
 | 将所选工作目录移入系统回收站 | 支持 | 不支持 | 不支持 |
@@ -94,11 +94,11 @@ threadbox
 
 ## VS Code 插件安装
 
-可从 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=irisNeko.codex-threadbox-vscode)、[Open VSX](https://open-vsx.org/extension/irisNeko/codex-threadbox-vscode) 或 Release 中的 VSIX 安装 **Threadbox for Codex**。打开官方 Codex 侧边栏并展开 **Threadbox** 即可管理项目树；将 `threadbox.sidebarLocation` 设置为 `standalone` 可恢复原来的独立活动栏入口，未检测到兼容的 Codex 侧边栏时也会自动回退。命令面板中的 **Threadbox: Open Manager** 用于打开完整管理器。
+可从 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=irisNeko.codex-threadbox-vscode)、[Open VSX](https://open-vsx.org/extension/irisNeko/codex-threadbox-vscode) 或 Release 中的 VSIX 安装 **Threadbox for Codex**。打开官方 Codex 侧边栏并展开 **Threadbox**，可用**导入当前工作区**、拖放、多选或**移动到项目**管理项目树；将 `threadbox.sidebarLocation` 设置为 `standalone` 可恢复原来的独立活动栏入口，未检测到兼容的 Codex 侧边栏时也会自动回退。命令面板中的 **Threadbox: Open Manager** 用于打开完整管理器。
 
 插件声明了 `extensionKind: ["workspace"]`。在 Remote SSH、Dev Container 和 Codespaces 中，Codex CLI、`CODEX_HOME`、任务数据和 App Server 进程都位于远端。需要时使用 machine-scoped 的 `threadbox.codexBinary`、`threadbox.codexHome` 和 `threadbox.language` 设置。未信任工作区不会启动 Codex 或执行任务修改。
 
-Threadbox 项目名称和根任务归属保存在该扩展宿主的 VS Code 全局存储中，不修改 Codex 数据库或官方项目归属，也不会在不同远程主机间自动同步。内置**垃圾箱**同时支持 Threadbox 项目和 Codex 官方项目中的任务：移入时会归档任务，恢复时会尽量回到原 Threadbox 项目，只有执行**清空垃圾箱**才会永久删除符合条件的任务记录。整个过程始终保留工作目录。
+Threadbox 项目名称和根任务归属保存在该扩展宿主的 VS Code 全局存储中，不修改 Codex 数据库，也不会在不同远程主机间自动同步。Codex 界面中的项目目前没有通过公开 App Server 暴露，因此 Threadbox 无法导入或同步这些项目定义；其中的任务仍会按工作目录显示，并可照常在 Codex 中打开和继续。内置**垃圾箱**支持所有任务：移入时会归档任务，恢复时会尽量回到原 Threadbox 项目，只有执行**清空垃圾箱**才会永久删除符合条件的任务记录。整个过程始终保留工作目录。
 
 ## 删除安全
 

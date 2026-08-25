@@ -150,6 +150,21 @@ describe('filterThreads', () => {
     ])
   })
 
+  it('groups unknown project IDs by working directory when a host project snapshot is present', () => {
+    const thread = record({
+      id: 'task',
+      projectId: 'host-owned-project',
+      source: 'vscode',
+      cwd: '/work/product'
+    })
+    const projects: ProjectSnapshot = { projects: [], assignments: {}, refreshedAt: 1 }
+
+    expect(groupThreads([thread], projects)[0]).toMatchObject({
+      kind: 'localWorkspace',
+      name: 'product'
+    })
+  })
+
   it('keeps spawned descendants in their parent group and groups visible tree rows', () => {
     const parent = record({ id: 'parent', source: 'vscode', cwd: '/work/app' })
     const child = record({

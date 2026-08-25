@@ -20,12 +20,12 @@ describe('VS Code Webview RPC validation', () => {
       kind: 'threadbox.request', id: 'request-3', method: 'createProject', args: ['Focus']
     })).toMatchObject({ method: 'createProject' })
     expect(parseRpcRequest({
-      kind: 'threadbox.request', id: 'request-official', method: 'createOfficialProject',
-      args: ['Shared project']
-    })).toMatchObject({ method: 'createOfficialProject' })
+      kind: 'threadbox.request', id: 'request-import', method: 'importCurrentWorkspaceProject',
+      args: []
+    })).toMatchObject({ method: 'importCurrentWorkspaceProject' })
     expect(parseRpcRequest({
       kind: 'threadbox.request', id: 'request-4', method: 'createThreadInProject',
-      args: ['official:one', 'New task']
+      args: ['threadbox:one', 'New task']
     })).toMatchObject({ method: 'createThreadInProject' })
     expect(parseRpcRequest({
       kind: 'threadbox.request', id: 'request-trash', method: 'trashThreads',
@@ -67,18 +67,26 @@ describe('VS Code Webview RPC validation', () => {
     })).toBeNull()
     expect(parseRpcRequest({
       kind: 'threadbox.request', id: '7', method: 'createThreadInProject',
-      args: ['official:one', '   ']
+      args: ['threadbox:one', '   ']
     })).toBeNull()
     expect(parseRpcRequest({
       kind: 'threadbox.request', id: '8', method: 'createThreadInProject',
-      args: ['official:one', 'bad\nname']
+      args: ['threadbox:one', 'bad\nname']
     })).toBeNull()
     expect(parseRpcRequest({
       kind: 'threadbox.request', id: '9', method: 'createThreadInProject',
       args: ['official:\ninvalid', 'New task']
     })).toBeNull()
     expect(parseRpcRequest({
-      kind: 'threadbox.request', id: '10', method: 'createOfficialProject', args: ['bad\nname']
+      kind: 'threadbox.request', id: '9b', method: 'createThreadInProject',
+      args: ['official:one', 'New task']
+    })).toBeNull()
+    expect(parseRpcRequest({
+      kind: 'threadbox.request', id: '10', method: 'importCurrentWorkspaceProject',
+      args: [['/client/supplied/path']]
+    })).toBeNull()
+    expect(parseRpcRequest({
+      kind: 'threadbox.request', id: '13', method: 'createOfficialProject', args: ['Hidden']
     })).toBeNull()
     expect(parseRpcRequest({
       kind: 'threadbox.request', id: '11', method: 'emptyTrash', args: ['unexpected']

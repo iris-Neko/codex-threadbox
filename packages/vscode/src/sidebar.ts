@@ -47,8 +47,6 @@ interface SidebarLabels {
   emptyTrash: string
   emptyTrashConfirm: string
   noEligibleTasks: string
-  officialProject: string
-  threadboxProject: string
   search: string
   searchPlaceholder: string
   noResults: string
@@ -69,7 +67,7 @@ function labels(locale: string): SidebarLabels {
       restoreFromTrash: '从垃圾箱恢复', emptyTrash: '清空垃圾箱',
       emptyTrashConfirm: '垃圾箱中的任务记录将永久删除，工作目录会保留。',
       noEligibleTasks: '所选任务正在运行、已置顶或已经在垃圾箱中。',
-      officialProject: 'Codex 项目', threadboxProject: 'Threadbox 项目', search: '搜索任务',
+      search: '搜索任务',
       searchPlaceholder: '标题、摘要、目录、来源、ID 或项目', noResults: '没有匹配的任务',
       createAndMove: '新建项目并移动'
     }
@@ -86,7 +84,7 @@ function labels(locale: string): SidebarLabels {
     moveToTrash: 'Move to Trash', restoreFromTrash: 'Restore from Trash', emptyTrash: 'Empty Trash',
     emptyTrashConfirm: 'Task records in Trash will be permanently deleted. Working directories will be kept.',
     noEligibleTasks: 'The selected tasks are running, pinned, or already in Trash.',
-    officialProject: 'Codex project', threadboxProject: 'Threadbox project', search: 'Search tasks',
+    search: 'Search tasks',
     searchPlaceholder: 'Title, preview, directory, source, ID, or project', noResults: 'No matching tasks',
     createAndMove: 'Create project and move'
   }
@@ -230,26 +228,23 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
 
   async createProject(): Promise<void> {
     const copy = labels(this.locale)
-    let kind: 'official' | 'threadbox' = 'threadbox'
-    if (this.snapshot.canManageOfficialProjects && this.api.createOfficialProject) {
-      const choice = await vscode.window.showQuickPick([
-        { label: copy.officialProject, projectKind: 'official' as const },
-        { label: copy.threadboxProject, projectKind: 'threadbox' as const }
-      ], { placeHolder: copy.newProject })
-      if (!choice) return
-      kind = choice.projectKind
-    }
     const name = await vscode.window.showInputBox({ prompt: copy.newProject, placeHolder: copy.projectName })
     if (!name?.trim()) return
     try {
-      const snapshot = kind === 'official' && this.api.createOfficialProject
-        ? await this.api.createOfficialProject(name)
-        : await this.api.createProject(name)
-      if (!snapshot) return
-      this.updateSnapshot(snapshot)
+      this.updateSnapshot(await this.api.createProject(name))
       this.redraw()
     }
     catch (error) { await this.showError(error) }
+  }
+
+  async importCurrentWorkspace(): Promise<void> {
+    if (!this.api.importCurrentWorkspaceProject) return
+    try {
+      const snapshot = await this.api.importCurrentWorkspaceProject()
+      if (!snapshot) return
+      this.updateSnapshot(snapshot)
+      this.redraw()
+    } catch (error) { await this.showError(error) }
   }
 
   async createThread(item?: SidebarItem): Promise<void> {
@@ -286,8 +281,7 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
     if (!project) return
     const copy = labels(this.locale)
     if (project.readOnly) {
-      await vscode.window.showWarningMessage(
-        this.snapshot.officialProjectManagementUnavailableReason ?? copy.unavailable)
+      await vscode.window.showWarningMessage(copy.unavailable)
       return
     }
     const name = await vscode.window.showInputBox({
@@ -303,8 +297,7 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
     if (!project) return
     const copy = labels(this.locale)
     if (project.readOnly) {
-      await vscode.window.showWarningMessage(
-        this.snapshot.officialProjectManagementUnavailableReason ?? copy.unavailable)
+      await vscode.window.showWarningMessage(copy.unavailable)
       return
     }
     const confirmed = await vscode.window.showWarningMessage(
@@ -327,7 +320,7 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
           : this.snapshot.projects.find((project) => project.id === target.projectId)?.systemKind === 'trash'
             ? copy.trash
             : target.name,
-      description: target.kind === 'project' ? copy.threadboxProject : undefined,
+      description: undefined,
       target
     }))
     const choice = await vscode.window.showQuickPick(choices, { placeHolder: copy.moveToProject })
@@ -534,26 +527,13 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
           ? threads.filter((thread) => !thread.internal).length
           : this.visibleCount(threads)),
         icon: inTrash ? 'trash' : 'folder-library',
-        tooltip: inTrash ? copy.trash : copy.threadboxProject,
+        tooltip: inTrash ? copy.trash : project.name,
         children: this.projectChildren(threads, copy, project.id, allThreads, inTrash),
         contextValue: inTrash
           ? 'threadbox.project.threadbox.trash'
           : 'threadbox.project.threadbox.mutable',
         project })]
     })
-    for (const group of groups.filter((item) => item.kind === 'desktopProject')) {
-      const threads = filterSidebarThreads(group.threads, query, group.name)
-      if (query && threads.length === 0 && !group.name.toLocaleLowerCase().includes(normalizedQuery)) continue
-      const project = group.project ?? { id: group.projectId ?? group.id, name: group.name,
-        kind: 'official' as const, readOnly: true, codexProjectId: null, roots: [],
-        canCreateThread: false, createThreadUnavailableReason: copy.unavailable,
-        createdAt: null, updatedAt: null }
-      projectItems.push(new SidebarItem(group.name, { kind: 'project',
-        id: `threadbox:project:${group.id}`,
-        description: String(this.visibleCount(threads)), icon: 'folder-library',
-        tooltip: copy.officialProject, children: this.projectChildren(threads, copy, group.id, group.threads),
-        contextValue: `threadbox.project.official.${project.readOnly ? 'readonly' : 'mutable'}`, project }))
-    }
     const unassignedMatches = copy.unassigned.toLocaleLowerCase().includes(normalizedQuery)
     const unassignedGroups = groups.filter((group) =>
       group.kind === 'localWorkspace' || group.kind === 'standalone')

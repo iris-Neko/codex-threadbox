@@ -2,7 +2,7 @@
   "name": "codex-threadbox-vscode",
   "displayName": "Codex Threadbox",
   "description": "Manage Codex tasks locally, including on Remote SSH, Dev Containers, and Codespaces.",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "publisher": "irisNeko",
   "license": "MIT",
   "private": true,
@@ -70,6 +70,12 @@
         "title": "New Project",
         "category": "Threadbox",
         "icon": "$(new-folder)"
+      },
+      {
+        "command": "threadbox.importCurrentWorkspaceProject",
+        "title": "Import Current Workspace",
+        "category": "Threadbox",
+        "icon": "$(root-folder-opened)"
       },
       {
         "command": "threadbox.newThreadInProject",
@@ -209,6 +215,11 @@
           "command": "threadbox.newProject",
           "when": "view =~ /^threadbox\\.sidebar/",
           "group": "navigation@5"
+        },
+        {
+          "command": "threadbox.importCurrentWorkspaceProject",
+          "when": "view =~ /^threadbox\\.sidebar/ && workspaceFolderCount > 0",
+          "group": "navigation@6"
         }
       ],
       "view/item/context": [
@@ -223,18 +234,23 @@
           "group": "inline@1"
         },
         {
+          "command": "threadbox.importCurrentWorkspaceProject",
+          "when": "view =~ /^threadbox\\.sidebar/ && viewItem == threadbox.projects && workspaceFolderCount > 0",
+          "group": "inline@2"
+        },
+        {
           "command": "threadbox.renameProject",
-          "when": "view =~ /^threadbox\\.sidebar/ && viewItem =~ /^threadbox\\.project\\.(threadbox|official)\\.mutable$/",
+          "when": "view =~ /^threadbox\\.sidebar/ && viewItem == threadbox.project.threadbox.mutable",
           "group": "inline@1"
         },
         {
           "command": "threadbox.newThreadInProject",
-          "when": "view =~ /^threadbox\\.sidebar/ && viewItem =~ /^threadbox\\.project\\.(threadbox|official)\\.(mutable|readonly)$/",
+          "when": "view =~ /^threadbox\\.sidebar/ && viewItem == threadbox.project.threadbox.mutable",
           "group": "inline@0"
         },
         {
           "command": "threadbox.deleteProject",
-          "when": "view =~ /^threadbox\\.sidebar/ && viewItem =~ /^threadbox\\.project\\.(threadbox|official)\\.mutable$/",
+          "when": "view =~ /^threadbox\\.sidebar/ && viewItem == threadbox.project.threadbox.mutable",
           "group": "project@2"
         },
         {

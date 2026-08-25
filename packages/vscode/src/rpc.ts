@@ -31,7 +31,7 @@ const METHODS = new Set<RpcMethod>([
   'setPinned',
   'listProjects',
   'createProject',
-  'createOfficialProject',
+  'importCurrentWorkspaceProject',
   'renameProject',
   'deleteProject',
   'assignThreads',
@@ -61,29 +61,34 @@ function isIds(value: unknown): value is string[] {
     value.every((item) => isString(item, 512))
 }
 
+function isProjectId(value: unknown): value is string {
+  return isVisibleString(value, 512) && value.startsWith('threadbox:')
+}
+
 function validArgs(method: RpcMethod, args: unknown[]): boolean {
   if (['getPlatformCapabilities', 'getEnvironmentStatus', 'listThreads', 'repairDesktopRecents',
-    'chooseCliPath', 'getSettings', 'listProjects', 'emptyTrash'].includes(method)) return args.length === 0
+    'chooseCliPath', 'getSettings', 'listProjects', 'emptyTrash',
+    'importCurrentWorkspaceProject'].includes(method)) return args.length === 0
   if (['archiveThreads', 'unarchiveThreads', 'trashThreads', 'restoreThreadsFromTrash']
     .includes(method)) return args.length === 1 && isIds(args[0])
   if (method === 'setPinned') {
     return args.length === 2 && isIds(args[0]) && typeof args[1] === 'boolean'
   }
-  if (method === 'createProject' || method === 'createOfficialProject') {
+  if (method === 'createProject') {
     return args.length === 1 && isVisibleString(args[0], 80)
   }
   if (method === 'renameProject') {
-    return args.length === 2 && isVisibleString(args[0], 512) && isVisibleString(args[1], 80)
+    return args.length === 2 && isProjectId(args[0]) && isVisibleString(args[1], 80)
   }
   if (method === 'deleteProject') {
-    return args.length === 1 && isVisibleString(args[0], 512)
+    return args.length === 1 && isProjectId(args[0])
   }
   if (method === 'assignThreads') {
     return args.length === 2 && isIds(args[0]) &&
-      (args[1] === null || isString(args[1], 128))
+      (args[1] === null || isProjectId(args[1]))
   }
   if (method === 'createThreadInProject') {
-    return args.length === 2 && isVisibleString(args[0], 512) && isVisibleString(args[1], 512)
+    return args.length === 2 && isProjectId(args[0]) && isVisibleString(args[1], 512)
   }
   if (method === 'deleteThreads') {
     return args.length === 2 && isIds(args[0]) && isObject(args[1]) &&

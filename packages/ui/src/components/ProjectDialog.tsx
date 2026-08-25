@@ -1,28 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { ProjectKind } from '../../../../src/shared/contracts'
 import { Modal } from './Modal'
 
 interface ProjectDialogProps {
   initialName?: string
-  initialKind?: ProjectKind
-  allowOfficial: boolean
   busy: boolean
   onClose(): void
-  onSubmit(name: string, kind: ProjectKind): void
+  onSubmit(name: string): void
 }
 
 export function ProjectDialog({
   initialName = '',
-  initialKind,
-  allowOfficial,
   busy,
   onClose,
   onSubmit
 }: ProjectDialogProps): React.JSX.Element {
   const { t } = useTranslation()
   const [name, setName] = useState(initialName)
-  const [kind, setKind] = useState<ProjectKind>(initialKind ?? (allowOfficial ? 'official' : 'threadbox'))
   const input = useRef<HTMLInputElement>(null)
 
   useEffect(() => input.current?.select(), [])
@@ -52,32 +46,9 @@ export function ProjectDialog({
         id="project-form"
         onSubmit={(event) => {
           event.preventDefault()
-          if (valid) onSubmit(name.trim(), kind)
+          if (valid) onSubmit(name.trim())
         }}
       >
-        {!initialName && allowOfficial && (
-          <div className="field">
-            <span>{t('projectType')}</span>
-            <div className="segmented-control" role="group" aria-label={t('projectType')}>
-              <button
-                type="button"
-                className={kind === 'official' ? 'is-active' : undefined}
-                onClick={() => setKind('official')}
-                disabled={busy}
-              >
-                {t('codexProject')}
-              </button>
-              <button
-                type="button"
-                className={kind === 'threadbox' ? 'is-active' : undefined}
-                onClick={() => setKind('threadbox')}
-                disabled={busy}
-              >
-                {t('threadboxProject')}
-              </button>
-            </div>
-          </div>
-        )}
         <label className="field">
           <span>{t('projectName')}</span>
           <input

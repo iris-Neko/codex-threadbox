@@ -123,12 +123,14 @@ function groupIdentity(
   if (projectId) {
     const officialId = `official:${projectId}`
     const project = projects?.projects.find((item) => item.id === officialId) ?? null
-    return {
-      id: `project:${projectId}`,
-      kind: 'desktopProject',
-      projectId: officialId,
-      project,
-      directory: owner.cwd
+    if (projects === null || project) {
+      return {
+        id: `project:${projectId}`,
+        kind: 'desktopProject',
+        projectId: officialId,
+        project,
+        directory: owner.cwd
+      }
     }
   }
   if (owner.source === 'appServer' && projects === null) {

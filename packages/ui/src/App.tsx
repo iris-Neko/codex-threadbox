@@ -3,6 +3,7 @@ import {
   Archive,
   ArchiveRestore,
   DatabaseZap,
+  FolderDown,
   FolderInput,
   FolderKanban,
   FolderPlus,
@@ -517,15 +518,30 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
               )}
             </label>
             {platform.projectManagement && (
-              <button
-                className="button button--secondary button--icon-text"
-                type="button"
-                disabled={busy}
-                onClick={() => setProjectDialog('new')}
-              >
-                <FolderPlus size={15} aria-hidden="true" />
-                {t('newProject')}
-              </button>
+              <>
+                {platform.workspaceProjectImport && api.importCurrentWorkspaceProject && (
+                  <button
+                    className="button button--secondary button--icon-text"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void runProjectOperation(
+                      () => api.importCurrentWorkspaceProject!()
+                    )}
+                  >
+                    <FolderDown size={15} aria-hidden="true" />
+                    {t('importWorkspace')}
+                  </button>
+                )}
+                <button
+                  className="button button--secondary button--icon-text"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setProjectDialog('new')}
+                >
+                  <FolderPlus size={15} aria-hidden="true" />
+                  {t('newProject')}
+                </button>
+              </>
             )}
             <div className="segmented-control view-control" role="group" aria-label={t('viewMode')}>
               <button
@@ -903,17 +919,11 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
       {projectDialog && (
         <ProjectDialog
           initialName={projectDialog === 'new' ? undefined : projectDialog.name}
-          initialKind={projectDialog === 'new' ? undefined : projectDialog.kind}
-          allowOfficial={Boolean(
-            projects.canManageOfficialProjects && api.createOfficialProject
-          )}
           busy={busy}
           onClose={() => setProjectDialog(null)}
-          onSubmit={(name, kind) => void runProjectOperation(
+          onSubmit={(name) => void runProjectOperation(
             () => projectDialog === 'new'
-              ? kind === 'official' && api.createOfficialProject
-                ? api.createOfficialProject(name)
-                : api.createProject(name)
+              ? api.createProject(name)
               : api.renameProject(projectDialog.id, name),
             true
           )}

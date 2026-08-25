@@ -15,7 +15,7 @@ Threadbox brings Codex task history from every working directory into one search
 - List active and archived tasks across all working directories.
 - Search titles, previews, paths, sources, and task IDs.
 - Group desktop chats by Project, VS Code and CLI chats by working directory, and projectless desktop chats as independent tasks.
-- Organize VS Code and remote-host tasks inside the Codex sidebar, including drag-and-drop and multi-select actions.
+- Organize VS Code and remote-host tasks inside the Codex sidebar, including current-workspace import, drag-and-drop, and multi-select actions.
 - Switch between grouped and flat views, and filter by project/workspace, archive state, source, directory, or recent activity.
 - Archive, unarchive, and delete one or many tasks; VS Code provides a restorable task Trash before permanent deletion.
 - Optionally move selected working directories to the system Trash while keeping other project files.
@@ -34,7 +34,7 @@ Everything runs locally. Threadbox has no telemetry, does not call a model, and 
 | --- | --- | --- | --- |
 | List, search, group, archive, pin, and delete task records | Yes | Yes | Yes |
 | Manage the host used by Remote SSH, Dev Containers, or Codespaces | No | Yes | Yes |
-| Create host-local task projects | No | No | Yes |
+| Create or import host-local task projects | No | No | Yes |
 | Restore tasks from a built-in task Trash | No | No | Yes |
 | Open a task working directory | Yes | No | Yes |
 | Move selected working directories to system Trash | Yes | No | No |
@@ -94,11 +94,11 @@ Running `threadbox` in a TTY opens the interactive manager. Scriptable commands 
 
 ## VS Code install
 
-Install **Threadbox for Codex** from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=irisNeko.codex-threadbox-vscode), [Open VSX](https://open-vsx.org/extension/irisNeko/codex-threadbox-vscode), or the release VSIX. Open the official Codex sidebar and expand **Threadbox** to search tasks and organize them with multi-select, drag-and-drop, or **Move to Project**; the move picker can create a project without leaving the workflow. Set `threadbox.sidebarLocation` to `standalone` for the original Activity Bar container. Threadbox also falls back there when a compatible Codex sidebar is unavailable. Run **Threadbox: Open Manager** for the full table and advanced filters.
+Install **Threadbox for Codex** from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=irisNeko.codex-threadbox-vscode), [Open VSX](https://open-vsx.org/extension/irisNeko/codex-threadbox-vscode), or the release VSIX. Open the official Codex sidebar and expand **Threadbox** to search tasks and organize them with **Import Current Workspace**, multi-select, drag-and-drop, or **Move to Project**; the move picker can create a project without leaving the workflow. Set `threadbox.sidebarLocation` to `standalone` for the original Activity Bar container. Threadbox also falls back there when a compatible Codex sidebar is unavailable. Run **Threadbox: Open Manager** for the full table and advanced filters.
 
 The extension declares `extensionKind: ["workspace"]`. In Remote SSH, Dev Containers, and Codespaces, Codex CLI, `CODEX_HOME`, task data, and the App Server process all remain on the remote host. Configure `threadbox.codexBinary`, `threadbox.codexHome`, or `threadbox.language` as machine-scoped settings when needed. An untrusted workspace cannot start Codex or modify task metadata.
 
-Threadbox project names and root-task assignments are stored in that extension host's VS Code global storage. They do not modify Codex databases or official project assignments and do not automatically sync between remote hosts. The built-in **Trash** works for tasks from both Threadbox and official Codex projects: moving a task there archives it, restoring it returns to its previous Threadbox project when possible, and **Empty Trash** permanently deletes eligible task records. Every step preserves working directories.
+Threadbox project names and root-task assignments are stored in that extension host's VS Code global storage. They do not modify Codex databases and do not automatically sync between remote hosts. Codex interface projects are not currently exposed by the public App Server, so Threadbox cannot import or synchronize those project definitions; their tasks remain visible by working directory and can still be opened and continued in Codex. The built-in **Trash** works for every task: moving a task there archives it, restoring it returns to its previous Threadbox project when possible, and **Empty Trash** permanently deletes eligible task records. Every step preserves working directories.
 
 ## Safety model
 

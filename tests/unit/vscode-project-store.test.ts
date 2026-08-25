@@ -74,31 +74,106 @@ describe('VS Code project store', () => {
     expect((await store.list()).assignments).toEqual({ 'new-thread': project.id })
   })
 
-  it('uses official project names and roots from the Codex project catalog', async () => {
+  it('imports matching workspace roots atomically and moves existing assignments', async () => {
     const { store } = await setup()
-    const snapshot = await store.setInventory([], {
-      available: true,
-      message: null,
-      projects: [{
-        id: 'codex-project',
-        name: 'Official Product',
-        roots: [{ path: '/work/product' }, { path: '/work/docs' }],
-        metadata: {},
-        position: 0,
-        createdAt: 1,
-        updatedAt: 2
-      }]
+    const root = record({ id: 'root', cwd: '/work/app', status: 'active', pinned: true })
+    const child = record({ id: 'child', cwd: '/elsewhere', parentThreadId: 'root', internal: true })
+    const docs = record({ id: 'docs', cwd: '/work/docs/guide', archived: true })
+    const prefix = record({ id: 'prefix', cwd: '/work/application' })
+    await store.setInventory([root, child, docs, prefix])
+    const old = (await store.create('Old')).projects.find((item) => item.name === 'Old')!
+    await store.assign(['root'], old.id)
+
+    const imported = await store.importWorkspace('Workspace', ['/work/app', '/work/docs'])
+    expect(imported.alreadyImported).toBe(false)
+    expect(imported.importedRootCount).toBe(2)
+    expect(imported.snapshot.assignments).toEqual({
+      root: imported.projectId,
+      docs: imported.projectId
     })
-    expect(snapshot.projects).toContainEqual(expect.objectContaining({
-      id: 'official:codex-project',
-      name: 'Official Product',
-      codexProjectId: 'codex-project',
-      roots: ['/work/product', '/work/docs'],
-      canCreateThread: true,
-      readOnly: false
-    }))
-    expect(snapshot.canManageOfficialProjects).toBe(true)
-    expect(snapshot.officialProjectManagementUnavailableReason).toBeNull()
+    expect(imported.snapshot.assignments).not.toHaveProperty('child')
+    expect(imported.snapshot.assignments).not.toHaveProperty('prefix')
+    expect(imported.snapshot.projects.find((item) => item.id === imported.projectId)?.roots)
+      .toEqual(['/work/app', '/work/docs/guide'])
+  })
+
+  it('matches Windows and UNC paths without case sensitivity', async () => {
+    const { store } = await setup()
+    await store.setInventory([
+      record({ id: 'windows', cwd: 'C:\\Work\\App\\src' }),
+      record({ id: 'unc', cwd: '\\\\Server\\Share\\Repo\\src' }),
+      record({ id: 'other', cwd: 'C:\\Work\\Application' })
+    ])
+
+    const imported = await store.importWorkspace('Windows', [
+      'c:\\work\\app',
+      '\\\\server\\share\\repo'
+    ])
+    expect(imported.snapshot.assignments).toEqual({
+      windows: imported.projectId,
+      unc: imported.projectId
+    })
+  })
+
+  it('imports tasks below the POSIX filesystem root', async () => {
+    const { store } = await setup()
+    await store.setInventory([
+      record({ id: 'root-directory', cwd: '/work/app' }),
+      record({ id: 'relative', cwd: 'work/app' })
+    ])
+
+    const imported = await store.importWorkspace('Root', ['/'])
+    expect(imported.snapshot.assignments).toEqual({
+      'root-directory': imported.projectId
+    })
+  })
+
+  it('keeps Trash tasks out and detects an already imported workspace', async () => {
+    const { store } = await setup()
+    const kept = record({ id: 'kept', cwd: '/work/app' })
+    const trashed = record({ id: 'trashed', cwd: '/work/app/old' })
+    await store.setInventory([kept, trashed])
+    await store.moveToTrash(['trashed'])
+
+    const imported = await store.importWorkspace('Workspace', ['/work/app'])
+    const preview = await store.previewWorkspaceImport(['/work/app'])
+    const repeated = await store.importWorkspace('Ignored name', ['/work/app'])
+    const trash = imported.snapshot.projects.find((item) => item.systemKind === 'trash')!
+    expect(preview.existingProject?.id).toBe(imported.projectId)
+    expect(repeated).toMatchObject({ alreadyImported: true, projectId: imported.projectId })
+    expect(repeated.snapshot.assignments).toEqual({
+      kept: imported.projectId,
+      trashed: trash.id
+    })
+    expect(repeated.snapshot.projects.filter((item) => item.systemKind !== 'trash')).toHaveLength(1)
+  })
+
+  it('does not create a project when no workspace task matches or saving fails', async () => {
+    const { directory, store } = await setup()
+    await store.setInventory([record({ id: 'outside', cwd: '/outside' })])
+    await expect(store.importWorkspace('Missing', ['/work/app'])).rejects.toThrow(/No eligible tasks/)
+    expect((await store.list()).projects.filter((item) => item.systemKind !== 'trash')).toEqual([])
+
+    const blocked = join(directory, 'blocked')
+    await writeFile(blocked, 'not a directory', 'utf8')
+    const failing = new ProjectStore(join(blocked, 'projects-v1.json'))
+    await failing.setInventory([record({ id: 'inside', cwd: '/work/app' })])
+    await expect(failing.importWorkspace('Atomic', ['/work/app'])).rejects.toThrow()
+    expect((await failing.list()).projects.filter((item) => item.systemKind !== 'trash')).toEqual([])
+  })
+
+  it('does not write project data while staging a workspace import preview', async () => {
+    const { path, store } = await setup()
+    await store.setInventory([record({ id: 'old', cwd: '/old' })])
+    const project = (await store.create('Existing')).projects.find((item) => item.name === 'Existing')!
+    await store.assign(['old'], project.id)
+    const before = await readFile(path, 'utf8')
+
+    await store.setInventory([record({ id: 'new', cwd: '/work/app' })], {
+      persistPruning: false
+    })
+    expect((await store.previewWorkspaceImport(['/work/app'])).rootIds).toEqual(['new'])
+    expect(await readFile(path, 'utf8')).toBe(before)
   })
 
   it('removes project assignments without changing the inventory', async () => {
@@ -114,7 +189,7 @@ describe('VS Code project store', () => {
     await expect(store.assign(['task'], project.id)).rejects.toThrow(/not found/)
   })
 
-  it('prunes missing tasks and preserves official project metadata ownership', async () => {
+  it('prunes missing tasks and does not expose task project IDs as VS Code projects', async () => {
     const { store } = await setup()
     const official = record({ id: 'official-task', projectId: 'codex-project', cwd: '/work/product' })
     await store.setInventory([official])
@@ -124,10 +199,7 @@ describe('VS Code project store', () => {
     expect(pruned.assignments).toEqual({})
 
     const restored = await store.setInventory([official])
-    expect(restored.projects.find((item) => item.kind === 'official')).toMatchObject({
-      id: 'official:codex-project', name: 'product', readOnly: true, canCreateThread: false
-    })
-    expect(restored.canManageOfficialProjects).toBe(false)
+    expect(restored.projects.filter((item) => item.kind === 'official')).toEqual([])
   })
 
   it('backs up a corrupt file and starts with an empty snapshot', async () => {

@@ -284,7 +284,7 @@ export function ThreadTable({
         : group.kind === 'threadboxProject'
           ? t('threadboxProject')
           : group.kind === 'desktopProject'
-            ? t(allowProjectThreadCreation ? 'codexProject' : 'desktopProject')
+            ? t('desktopProject')
             : group.kind === 'standalone'
               ? t('standaloneGroup')
               : group.sources.length === 1 && group.sources[0] === 'vscode'

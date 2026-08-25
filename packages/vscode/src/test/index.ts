@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as vscode from 'vscode'
@@ -35,6 +35,7 @@ export async function run(): Promise<void> {
     assert(capabilities.host === 'vscode', 'VS Code capabilities were not returned.')
     assert(capabilities.projectManagement, 'VS Code project management was not enabled.')
     assert(capabilities.projectThreadCreation, 'VS Code project task creation was not enabled.')
+    assert(capabilities.workspaceProjectImport, 'VS Code workspace project import was not enabled.')
     assert(capabilities.taskTrash, 'VS Code task Trash was not enabled.')
     assert(!capabilities.directoryTrash, 'VS Code must not expose directory deletion.')
     assert(!capabilities.desktopRecentsRepair, 'VS Code must not expose Recents repair.')
@@ -43,6 +44,19 @@ export async function run(): Promise<void> {
     assert(status.state === 'ready' && status.cliVersion === '0.149.0', 'Fake Codex was not ready.')
     const listed = await api.listThreads()
     assert(listed.threads.length === 4, 'VS Code did not load active and archived fake tasks.')
+    assert(api.importCurrentWorkspaceProject, 'VS Code did not expose workspace project import.')
+    const seed = await api.createProject('Workspace import seed')
+    const seedProject = seed.projects.find((item) => item.name === 'Workspace import seed')
+    assert(seedProject, 'VS Code did not create the workspace import seed project.')
+    await api.assignThreads(['019f0000-0000-7000-8000-000000000001'], seedProject.id)
+    const imported = await api.importCurrentWorkspaceProject()
+    assert(imported, 'VS Code did not import the current workspace.')
+    const importedProjectId = imported.assignments['019f0000-0000-7000-8000-000000000001']
+    assert(importedProjectId, 'VS Code did not assign the matching workspace root task.')
+    assert(!imported.assignments['019f0000-0000-7000-8000-000000000002'],
+      'VS Code persisted a spawned child instead of its root task.')
+    assert(!imported.projects.some((item) => item.kind === 'official'),
+      'VS Code exposed an App Server project as a manageable project.')
     const created = await api.createProject('Extension test')
     const trashProject = created.projects.find((item) => item.systemKind === 'trash')
     assert(trashProject?.readOnly && !trashProject.canCreateThread,
@@ -74,31 +88,6 @@ export async function run(): Promise<void> {
     assert(emptied.succeeded.includes(disposableThread.threadId), 'VS Code did not empty Trash.')
     assert(!(await api.listThreads()).threads.some((item) => item.id === disposableThread.threadId),
       'Empty Trash did not permanently remove the task record.')
-    const officialSnapshot = await api.listProjects()
-    assert(officialSnapshot.canManageOfficialProjects,
-      'VS Code did not enable official Codex project management.')
-    assert(api.createOfficialProject, 'VS Code did not expose official Codex project creation.')
-    const createdOfficialSnapshot = await api.createOfficialProject('Created Codex project')
-    const createdOfficial = createdOfficialSnapshot?.projects.find((item) =>
-      item.kind === 'official' && item.name === 'Created Codex project')
-    assert(createdOfficial, 'VS Code did not create an official Codex project.')
-    await api.deleteProject(createdOfficial.id)
-    const official = officialSnapshot.projects.find((item) => item.kind === 'official')
-    assert(official?.name === 'Design System', 'VS Code did not load the official Codex project catalog.')
-    assert(!official.readOnly, 'VS Code kept an available official Codex project read-only.')
-    const officialThread = await api.createThreadInProject(official.id, 'Official project task')
-    assert(officialThread?.projectId === official.id, 'VS Code did not create an official project task.')
-    const renamedOfficial = await api.renameProject(official.id, 'Renamed Codex project')
-    assert(renamedOfficial.projects.some((item) => item.name === 'Renamed Codex project'),
-      'VS Code did not rename the official Codex project.')
-    const deletedOfficial = await api.deleteProject(official.id)
-    assert(!deletedOfficial.projects.some((item) => item.id === official.id),
-      'VS Code did not delete the official Codex project.')
-    const afterOfficialDelete = await api.listThreads()
-    const preservedOfficialTasks = afterOfficialDelete.threads.filter((item) =>
-      item.id === '019f0000-0000-7000-8000-000000000004' || item.id === officialThread.threadId)
-    assert(preservedOfficialTasks.length === 2 && preservedOfficialTasks.every((item) => !item.projectId),
-      'Deleting an official project did not preserve and unassign its tasks.')
     const renamed = await api.renameProject(project.id, 'Renamed extension test')
     assert(renamed.projects.some((item) => item.name === 'Renamed extension test'),
       'VS Code did not rename the project.')
@@ -111,6 +100,8 @@ export async function run(): Promise<void> {
     assert(commands.includes('threadbox.searchSidebar'), 'Threadbox sidebar search was not registered.')
     assert(commands.includes('threadbox.clearSidebarSearch'), 'Threadbox search reset was not registered.')
     assert(commands.includes('threadbox.newProject'), 'Threadbox project commands were not registered.')
+    assert(commands.includes('threadbox.importCurrentWorkspaceProject'),
+      'Threadbox workspace import command was not registered.')
     assert(commands.includes('threadbox.newThreadInProject'),
       'Threadbox project task creation command was not registered.')
     assert(commands.includes('threadbox.moveToProject'), 'Threadbox task move command was not registered.')
@@ -121,6 +112,12 @@ export async function run(): Promise<void> {
       'Threadbox double-click task command was not registered.')
     await vscode.commands.executeCommand('threadbox.refreshSidebar')
     await vscode.commands.executeCommand('threadbox.openManager')
+    const fakeLog = process.env.THREADBOX_FAKE_LOG
+    assert(fakeLog, 'THREADBOX_FAKE_LOG was not provided.')
+    const appServerMessages = (await readFile(fakeLog, 'utf8')).trim().split(/\r?\n/)
+      .map((line) => JSON.parse(line) as { method?: string })
+    assert(!appServerMessages.some((message) => message.method?.startsWith('project/')),
+      'VS Code sent an unsupported project/* request to App Server.')
   } finally {
     await configuration.update('codexBinary', undefined, vscode.ConfigurationTarget.Global)
     await configuration.update('codexHome', undefined, vscode.ConfigurationTarget.Global)
