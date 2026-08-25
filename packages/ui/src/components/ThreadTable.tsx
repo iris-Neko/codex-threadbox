@@ -31,6 +31,8 @@ interface ThreadTableProps {
   allowOpenDirectory: boolean
   allowActiveSelection: boolean
   allowProjectThreadCreation: boolean
+  taskTrash: boolean
+  trashedThreadIds: Set<string>
   projectMutationDisabled: boolean
   onToggle(id: string): void
   onToggleVisible(): void
@@ -43,6 +45,7 @@ interface ThreadTableProps {
   onCreateThread(project: ProjectRecord): void
   onRenameProject(project: ProjectRecord): void
   onDeleteProject(project: ProjectRecord): void
+  onEmptyTrash(project: ProjectRecord): void
 }
 
 function StateCell({ thread }: { thread: ThreadRecord }): React.JSX.Element {
@@ -91,6 +94,8 @@ export function ThreadTable({
   allowOpenDirectory,
   allowActiveSelection,
   allowProjectThreadCreation,
+  taskTrash,
+  trashedThreadIds,
   projectMutationDisabled,
   onToggle,
   onToggleVisible,
@@ -102,7 +107,8 @@ export function ThreadTable({
   onDelete,
   onCreateThread,
   onRenameProject,
-  onDeleteProject
+  onDeleteProject,
+  onEmptyTrash
 }: ThreadTableProps): React.JSX.Element {
   const { t } = useTranslation()
   const selectAllRef = useRef<HTMLInputElement>(null)
@@ -115,6 +121,7 @@ export function ThreadTable({
 
   const renderRow = ({ thread, depth, hasChildren, expanded, matchesFilter }: ThreadTreeRow) => {
     const automaticallyIncluded = implicitlySelected.has(thread.id)
+    const inTrash = taskTrash && trashedThreadIds.has(thread.id)
     const disabled = (!allowActiveSelection && thread.status === 'active') || !matchesFilter
     const mutationDisabled = thread.status === 'active' || !matchesFilter || automaticallyIncluded
     const rowClassName = [
@@ -222,35 +229,44 @@ export function ThreadTable({
             >
               <Copy size={15} aria-hidden="true" />
             </button>
+            {!inTrash && (
+              <button
+                className="icon-button icon-button--small"
+                type="button"
+                title={thread.archived ? t('unarchive') : t('archive')}
+                aria-label={thread.archived ? t('unarchive') : t('archive')}
+                disabled={mutationDisabled}
+                onClick={() => onArchive(thread)}
+              >
+                {thread.archived ? (
+                  <ArchiveRestore size={16} aria-hidden="true" />
+                ) : (
+                  <Archive size={16} aria-hidden="true" />
+                )}
+              </button>
+            )}
             <button
-              className="icon-button icon-button--small"
-              type="button"
-              title={thread.archived ? t('unarchive') : t('archive')}
-              aria-label={thread.archived ? t('unarchive') : t('archive')}
-              disabled={mutationDisabled}
-              onClick={() => onArchive(thread)}
-            >
-              {thread.archived ? (
-                <ArchiveRestore size={16} aria-hidden="true" />
-              ) : (
-                <Archive size={16} aria-hidden="true" />
-              )}
-            </button>
-            <button
-              className="icon-button icon-button--small icon-button--danger"
+              className={`icon-button icon-button--small${inTrash ? '' : ' icon-button--danger'}`}
               type="button"
               title={
                 automaticallyIncluded
                   ? t('includedByParentHint')
-                  : thread.pinned
-                    ? t('pinnedCannotDelete')
-                    : t('deleteHint')
+                  : inTrash
+                    ? t('restoreFromTrashHint')
+                    : thread.pinned
+                      ? t('pinnedCannotDelete')
+                      : taskTrash
+                        ? t('moveToTrashHint')
+                        : t('deleteHint')
               }
-              aria-label={t('delete')}
-              disabled={mutationDisabled || thread.pinned}
+              aria-label={inTrash ? t('restoreFromTrash') : taskTrash ? t('moveToTrash') : t('delete')}
+              disabled={automaticallyIncluded || !matchesFilter ||
+                (!inTrash && (thread.status === 'active' || thread.pinned))}
               onClick={() => onDelete(thread)}
             >
-              <Trash2 size={16} aria-hidden="true" />
+              {inTrash
+                ? <ArchiveRestore size={16} aria-hidden="true" />
+                : <Trash2 size={16} aria-hidden="true" />}
             </button>
           </div>
         </td>
@@ -260,27 +276,31 @@ export function ThreadTable({
 
   const renderGroupHeader = (group: ThreadRowGroup): React.JSX.Element => {
     const collapsed = !forceGroupsExpanded && collapsedGroups.has(group.id)
-    const title = group.kind === 'standalone' ? t('standaloneTasks') : group.name
+    const trashGroup = taskTrash && group.project?.systemKind === 'trash'
+    const title = trashGroup ? t('trash') : group.kind === 'standalone' ? t('standaloneTasks') : group.name
     const kindLabel =
-      group.kind === 'threadboxProject'
-        ? t('threadboxProject')
-        : group.kind === 'desktopProject'
-        ? t(allowProjectThreadCreation ? 'codexProject' : 'desktopProject')
-        : group.kind === 'standalone'
-          ? t('standaloneGroup')
-          : group.sources.length === 1 && group.sources[0] === 'vscode'
-            ? t('vscodeWorkspace')
-            : group.sources.length === 1 && group.sources[0] === 'cli'
-              ? t('cliWorkspace')
-              : t('localWorkspace')
+      trashGroup
+        ? t('trash')
+        : group.kind === 'threadboxProject'
+          ? t('threadboxProject')
+          : group.kind === 'desktopProject'
+            ? t(allowProjectThreadCreation ? 'codexProject' : 'desktopProject')
+            : group.kind === 'standalone'
+              ? t('standaloneGroup')
+              : group.sources.length === 1 && group.sources[0] === 'vscode'
+                ? t('vscodeWorkspace')
+                : group.sources.length === 1 && group.sources[0] === 'cli'
+                  ? t('cliWorkspace')
+                  : t('localWorkspace')
     const detail =
       group.kind === 'standalone'
         ? t('standaloneGroupHint')
         : group.directories.length === 1
           ? group.directories[0]
           : t('groupDirectoryCount', { count: group.directories.length })
-    const GroupIcon =
-      group.kind === 'threadboxProject' || group.kind === 'desktopProject'
+    const GroupIcon = trashGroup
+      ? Trash2
+      : group.kind === 'threadboxProject' || group.kind === 'desktopProject'
         ? FolderKanban
         : group.kind === 'standalone'
           ? MessageSquare
@@ -319,7 +339,7 @@ export function ThreadTable({
             </button>
             {group.project && (
               <div className="thread-group-actions">
-                {allowProjectThreadCreation && (
+                {allowProjectThreadCreation && !trashGroup && (
                   <button
                     className="icon-button icon-button--small"
                     type="button"
@@ -354,6 +374,18 @@ export function ThreadTable({
                       <Trash2 size={15} aria-hidden="true" />
                     </button>
                   </>
+                )}
+                {trashGroup && (
+                  <button
+                    className="icon-button icon-button--small icon-button--danger"
+                    type="button"
+                    title={t('emptyTrash')}
+                    aria-label={t('emptyTrash')}
+                    disabled={projectMutationDisabled || group.threads.length === 0}
+                    onClick={() => onEmptyTrash(group.project!)}
+                  >
+                    <Trash2 size={15} aria-hidden="true" />
+                  </button>
                 )}
               </div>
             )}

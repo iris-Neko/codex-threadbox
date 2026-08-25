@@ -17,7 +17,7 @@ Threadbox brings Codex task history from every working directory into one search
 - Group desktop chats by Project, VS Code and CLI chats by working directory, and projectless desktop chats as independent tasks.
 - Organize VS Code and remote-host tasks inside the Codex sidebar, including drag-and-drop and multi-select actions.
 - Switch between grouped and flat views, and filter by project/workspace, archive state, source, directory, or recent activity.
-- Archive, unarchive, and permanently delete one or many tasks.
+- Archive, unarchive, and delete one or many tasks; VS Code provides a restorable task Trash before permanent deletion.
 - Optionally move selected working directories to the system Trash while keeping other project files.
 - Group spawned sub-agent tasks under collapsible parent rows and avoid duplicate cascade deletion requests.
 - Protect running tasks and require an explicit irreversible-deletion acknowledgement.
@@ -35,6 +35,7 @@ Everything runs locally. Threadbox has no telemetry, does not call a model, and 
 | List, search, group, archive, pin, and delete task records | Yes | Yes | Yes |
 | Manage the host used by Remote SSH, Dev Containers, or Codespaces | No | Yes | Yes |
 | Create host-local task projects | No | No | Yes |
+| Restore tasks from a built-in task Trash | No | No | Yes |
 | Open a task working directory | Yes | No | Yes |
 | Move selected working directories to system Trash | Yes | No | No |
 | Repair Codex desktop's derived Recents catalog | Yes | No | No |
@@ -97,7 +98,7 @@ Install **Threadbox for Codex** from the [VS Code Marketplace](https://marketpla
 
 The extension declares `extensionKind: ["workspace"]`. In Remote SSH, Dev Containers, and Codespaces, Codex CLI, `CODEX_HOME`, task data, and the App Server process all remain on the remote host. Configure `threadbox.codexBinary`, `threadbox.codexHome`, or `threadbox.language` as machine-scoped settings when needed. An untrusted workspace cannot start Codex or modify task metadata.
 
-Threadbox project names and root-task assignments are stored in that extension host's VS Code global storage. They do not modify Codex databases or official project assignments and do not automatically sync between remote hosts.
+Threadbox project names and root-task assignments are stored in that extension host's VS Code global storage. They do not modify Codex databases or official project assignments and do not automatically sync between remote hosts. The built-in **Trash** works for tasks from both Threadbox and official Codex projects: moving a task there archives it, restoring it returns to its previous Threadbox project when possible, and **Empty Trash** permanently deletes eligible task records. Every step preserves working directories.
 
 ## Safety model
 
@@ -105,7 +106,7 @@ Permanent deletion calls App Server `thread/delete`, which also deletes spawned 
 
 Project files are kept by default. The deletion dialog lists the exact task `cwd` values shown in the table, not project/workspace group names. Only checked directories are moved to the operating system Trash, and only after the corresponding task deletion succeeds. Threadbox keeps filesystem roots, the user home and Codex data directories, system locations, its own application paths, and directories still referenced by remaining Codex tasks. Trash failures never trigger permanent filesystem deletion.
 
-The CLI and VS Code extension do not contain the Trash or Recents adapters. Their permanent-delete operation removes Codex task records and spawned descendants through App Server while preserving every working directory.
+The CLI and VS Code extension do not contain the operating-system directory Trash or Recents adapters. CLI deletion removes task records directly through App Server. VS Code ordinary deletion uses its metadata-only, archive-backed task Trash; only **Empty Trash** permanently removes those task records through App Server. Both products always preserve working directories.
 
 Codex `0.149.0` does not yet expose pin metadata in its stable App Server schema. Threadbox keeps pin controls capability-gated and enables them only when the installed stable CLI advertises the required API. It never works around a missing task API by modifying Codex task state files.
 

@@ -54,6 +54,9 @@ const api: ThreadboxApi = {
   listThreads: () => invoke('listThreads'),
   deleteThreads: (ids: string[], options: DeleteThreadsOptions) =>
     invoke('deleteThreads', ids, options),
+  trashThreads: (ids) => invoke('trashThreads', ids),
+  restoreThreadsFromTrash: (ids) => invoke('restoreThreadsFromTrash', ids),
+  emptyTrash: () => invoke('emptyTrash'),
   repairDesktopRecents: () => invoke('repairDesktopRecents'),
   archiveThreads: (ids) => invoke('archiveThreads', ids),
   unarchiveThreads: (ids) => invoke('unarchiveThreads', ids),

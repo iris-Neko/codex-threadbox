@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here.
 
+## VS Code 0.6.0 - 2026-08-25
+
+- Add a built-in, archive-backed task Trash with restore and protected permanent Empty Trash actions; working directories are always preserved.
+- Promote an existing host-local `trash` project in place and migrate project assignments from the previous extension identifier.
+- Keep project and task mutations behind workspace trust and the validated Webview RPC allowlist.
+
+## VS Code 0.5.0 - 2026-08-25
+
+- Add official Codex project discovery and management plus blank task creation in both official and Threadbox projects.
+
 ## VS Code 0.4.0 - 2026-08-24
 
 - Add host-local Threadbox projects with create, rename, delete, assignment, official-project fallback, and root-task inheritance.

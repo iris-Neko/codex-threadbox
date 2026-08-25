@@ -12,7 +12,7 @@ Threadbox is an npm workspace with shared core and UI packages plus three host a
 
 ## Shared UI
 
-`@threadbox/ui` is the React task manager. It receives an injected typed `ThreadboxApi`; it has no Electron, VS Code, filesystem, or Node dependency. `PlatformCapabilities` hides host-only controls such as desktop Recents repair, directory Trash, native executable selection, and current-workspace filtering.
+`@threadbox/ui` is the React task manager. It receives an injected typed `ThreadboxApi`; it has no Electron, VS Code, filesystem, or Node dependency. `PlatformCapabilities` hides host-only controls such as desktop Recents repair, directory Trash, VS Code task Trash, native executable selection, and current-workspace filtering.
 
 Desktop Project tasks are grouped by `projectId`, and projectless tasks fall back to working-directory groups. VS Code can overlay a Threadbox-owned project assignment on a root task without changing its official `projectId`; removing the overlay restores the official or directory group. Spawned tasks fold under their parent row and inherit their root task's Threadbox project.
 
@@ -39,11 +39,13 @@ The Webview has a strict nonce CSP, bundled local resources, no Node access, req
 
 Project names and root-task assignments use a versioned JSON file under the remote extension host's `globalStorageUri`. Writes use temporary-file replacement; corrupt files are preserved with a timestamped suffix before an empty catalog is created. The data is isolated per extension host, contains no transcript content, and is not synchronized between servers.
 
+The same host-local project file contains a built-in Trash assignment and the previous Threadbox project ID for each trashed root task. A legacy project named `trash` is promoted in place. Moving a task to Trash first applies the normal refreshed running/pinned protection, archives it through App Server, and then writes the local assignment. Restore unarchives the task and returns it to the recorded Threadbox project when it still exists. Either operation rolls back the App Server state if the local write fails. Empty Trash permanently deletes only the roots currently assigned to Trash, using the shared protected deletion path, and never deletes working directories.
+
 The VS Code host opts into the App Server experimental project API to read and manage official project names and roots. Official project creation, rename, and deletion use `project/create`, `project/update`, and `project/delete`; App Server preserves project tasks and clears their official assignment when a project is deleted. Threadbox can create an empty thread with `thread/start`, name it with `thread/name/set`, and either pass the official `projectId` or store a Threadbox-local assignment. If project discovery is unavailable, existing official tasks remain usable while official project mutation and creation in that project are disabled.
 
 ## Deletion safety
 
-Permanent deletion refreshes inventory first. Running and pinned tasks are skipped. If a parent and descendant are selected, only the highest selected parent is submitted because App Server deletion cascades. Requests run sequentially, and one failure does not stop the remaining tasks.
+Permanent deletion refreshes inventory first. Running and pinned tasks are skipped. If a parent and descendant are selected, only the highest selected parent is submitted because App Server deletion cascades. Requests run sequentially, and one failure does not stop the remaining tasks. In VS Code, ordinary deletion first moves tasks into the archive-backed built-in Trash; permanent deletion is available only through Empty Trash.
 
 Only the desktop adapter can move explicitly checked `cwd` values to Trash, and only after the owning task deletion succeeds. Roots, home, Codex data, system locations, application-containing paths, symbolic links, missing paths, and directories referenced by remaining tasks are preserved. Trash failure never falls back to permanent filesystem deletion.
 

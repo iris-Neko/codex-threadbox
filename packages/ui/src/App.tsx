@@ -217,6 +217,15 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
     () => groupThreads(threads, projectContext, groupMode),
     [groupMode, projectContext, threads]
   )
+  const trashGroup = useMemo(
+    () => groupThreads(threads, projectContext, 'projects')
+      .find((group) => group.project?.systemKind === 'trash') ?? null,
+    [projectContext, threads]
+  )
+  const trashedThreadIds = useMemo(
+    () => new Set(trashGroup?.threads.map((thread) => thread.id) ?? []),
+    [trashGroup]
+  )
   const rowGroups = useMemo(
     () => groupThreadRows(threads, treeRows, projectContext, groupMode),
     [groupMode, projectContext, threads, treeRows]
@@ -307,6 +316,22 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
     },
     [t]
   )
+
+  const moveToTrash = useCallback((ids: string[]): void => {
+    if (!api.trashThreads || ids.length === 0) return
+    if (!window.confirm(t('moveToTrashConfirm', { count: ids.length }))) return
+    void runOperation(() => api.trashThreads!(ids))
+  }, [api, runOperation, t])
+
+  const restoreFromTrash = useCallback((ids: string[]): void => {
+    if (!api.restoreThreadsFromTrash || ids.length === 0) return
+    void runOperation(() => api.restoreThreadsFromTrash!(ids))
+  }, [api, runOperation])
+
+  const emptyTrash = useCallback((): void => {
+    if (!api.emptyTrash || !window.confirm(t('emptyTrashConfirm'))) return
+    void runOperation(() => api.emptyTrash!())
+  }, [api, runOperation, t])
 
   const createThread = async (project: ProjectRecord, name: string): Promise<void> => {
     if (!api.createThreadInProject) {
@@ -402,10 +427,19 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
   }
 
   const archiveSelected = selectedRootThreads
-    .filter((thread) => thread.status !== 'active' && !thread.archived)
+    .filter((thread) => !trashedThreadIds.has(thread.id) &&
+      thread.status !== 'active' && !thread.archived)
     .map((thread) => thread.id)
   const unarchiveSelected = selectedRootThreads
-    .filter((thread) => thread.status !== 'active' && thread.archived)
+    .filter((thread) => !trashedThreadIds.has(thread.id) &&
+      thread.status !== 'active' && thread.archived)
+    .map((thread) => thread.id)
+  const trashSelected = selectedRootThreads
+    .filter((thread) => !trashedThreadIds.has(thread.id) &&
+      thread.status !== 'active' && !thread.pinned)
+    .map((thread) => thread.id)
+  const restoreSelected = selectedRootThreads
+    .filter((thread) => trashedThreadIds.has(thread.id))
     .map((thread) => thread.id)
   const pinnedSelected = selectedThreads
     .filter((thread) => thread.status !== 'active' && thread.pinned)
@@ -557,7 +591,9 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
               {workspaceGroups.map((group) => (
                 <option key={group.id} value={group.id}>
                   {group.kind === 'threadboxProject'
-                    ? t('threadboxProjectOption', { name: group.name })
+                    ? group.project?.systemKind === 'trash'
+                      ? t('trash')
+                      : t('threadboxProjectOption', { name: group.name })
                     : group.kind === 'standalone'
                     ? t('standaloneTasks')
                     : group.kind === 'desktopProject'
@@ -673,7 +709,9 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
                       <option value="" disabled>{t('moveToProject')}</option>
                       <option value="__unassigned__">{t('removeFromProject')}</option>
                       {customProjects.map((project) => (
-                        <option key={project.id} value={project.id}>{project.name}</option>
+                        <option key={project.id} value={project.id}>
+                          {project.systemKind === 'trash' ? t('trash') : project.name}
+                        </option>
                       ))}
                     </select>
                   </label>
@@ -716,16 +754,32 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
                   <PinOff size={15} aria-hidden="true" />
                   {t('unpin')}
                 </button>
+                {platform.taskTrash && restoreSelected.length > 0 && (
+                  <button
+                    className="button button--quiet"
+                    type="button"
+                    title={t('restoreFromTrashHint')}
+                    disabled={busy}
+                    onClick={() => restoreFromTrash(restoreSelected)}
+                  >
+                    <ArchiveRestore size={15} aria-hidden="true" />
+                    {t('restoreFromTrash')}
+                  </button>
+                )}
                 <button
                   className="button button--quiet-danger"
                   type="button"
-                  title={t('deleteHint')}
-                  disabled={busy || selectedRootThreads.every((thread) =>
-                    thread.status === 'active' || thread.pinned)}
-                  onClick={() => setDeleteIds([...selection.roots])}
+                  title={t(platform.taskTrash ? 'moveToTrashHint' : 'deleteHint')}
+                  disabled={busy || (platform.taskTrash
+                    ? trashSelected.length === 0
+                    : selectedRootThreads.every((thread) =>
+                      thread.status === 'active' || thread.pinned))}
+                  onClick={() => platform.taskTrash
+                    ? moveToTrash(trashSelected)
+                    : setDeleteIds([...selection.roots])}
                 >
                   <Trash2 size={15} aria-hidden="true" />
-                  {t('delete')}
+                  {t(platform.taskTrash ? 'moveToTrash' : 'delete')}
                 </button>
               </>
             )}
@@ -776,6 +830,8 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
             allowOpenDirectory={platform.openWorkingDirectory}
             allowActiveSelection={platform.projectManagement}
             allowProjectThreadCreation={Boolean(platform.projectThreadCreation)}
+            taskTrash={Boolean(platform.taskTrash)}
+            trashedThreadIds={trashedThreadIds}
             projectMutationDisabled={busy}
             onToggle={toggleThread}
             onToggleVisible={toggleVisible}
@@ -794,7 +850,15 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
                   : api.archiveThreads([thread.id])
               )
             }
-            onDelete={(thread) => setDeleteIds([thread.id])}
+            onDelete={(thread) => {
+              if (!platform.taskTrash) {
+                setDeleteIds([thread.id])
+              } else if (trashedThreadIds.has(thread.id)) {
+                restoreFromTrash([thread.id])
+              } else {
+                moveToTrash([thread.id])
+              }
+            }}
             onCreateThread={(project) => setThreadProject(project)}
             onRenameProject={(project) => setProjectDialog(project)}
             onDeleteProject={(project) => {
@@ -802,6 +866,7 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
                 void runProjectOperation(() => api.deleteProject(project.id))
               }
             }}
+            onEmptyTrash={() => emptyTrash()}
           />
         )}
       </main>
@@ -864,7 +929,7 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
         />
       )}
 
-      {deleteIds && (
+      {deleteIds && !platform.taskTrash && (
         <DeleteDialog
           threads={deleteThreads}
           externalProcesses={environment.externalCodexProcesses}

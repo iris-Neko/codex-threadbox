@@ -27,6 +27,17 @@ describe('VS Code Webview RPC validation', () => {
       kind: 'threadbox.request', id: 'request-4', method: 'createThreadInProject',
       args: ['official:one', 'New task']
     })).toMatchObject({ method: 'createThreadInProject' })
+    expect(parseRpcRequest({
+      kind: 'threadbox.request', id: 'request-trash', method: 'trashThreads',
+      args: [['thread-1']]
+    })).toMatchObject({ method: 'trashThreads' })
+    expect(parseRpcRequest({
+      kind: 'threadbox.request', id: 'request-restore', method: 'restoreThreadsFromTrash',
+      args: [['thread-1']]
+    })).toMatchObject({ method: 'restoreThreadsFromTrash' })
+    expect(parseRpcRequest({
+      kind: 'threadbox.request', id: 'request-empty', method: 'emptyTrash', args: []
+    })).toMatchObject({ method: 'emptyTrash' })
   })
 
   it('rejects unknown methods and host-only directory deletion', () => {
@@ -68,6 +79,12 @@ describe('VS Code Webview RPC validation', () => {
     })).toBeNull()
     expect(parseRpcRequest({
       kind: 'threadbox.request', id: '10', method: 'createOfficialProject', args: ['bad\nname']
+    })).toBeNull()
+    expect(parseRpcRequest({
+      kind: 'threadbox.request', id: '11', method: 'emptyTrash', args: ['unexpected']
+    })).toBeNull()
+    expect(parseRpcRequest({
+      kind: 'threadbox.request', id: '12', method: 'restoreThreadsFromTrash', args: [[]]
     })).toBeNull()
     expect(parseRpcRequest({
       kind: 'threadbox.request',

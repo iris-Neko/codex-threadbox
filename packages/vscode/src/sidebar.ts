@@ -40,8 +40,12 @@ interface SidebarLabels {
   deleteProjectConfirm: string
   moveToProject: string
   removeFromProject: string
-  deleteTasksConfirm: string
-  deleteTasks: string
+  trash: string
+  moveToTrashConfirm: string
+  moveToTrash: string
+  restoreFromTrash: string
+  emptyTrash: string
+  emptyTrashConfirm: string
   noEligibleTasks: string
   officialProject: string
   threadboxProject: string
@@ -60,8 +64,11 @@ function labels(locale: string): SidebarLabels {
       newThread: '新建对话', threadName: '对话名称', threadCreated: '已创建对话',
       renameProject: '重命名项目', deleteProject: '删除项目',
       deleteProjectConfirm: '只删除项目分组，任务会变为未归属。', moveToProject: '移动到项目',
-      removeFromProject: '移出 Threadbox 项目', deleteTasksConfirm: '任务记录将永久删除，工作目录会保留。',
-      deleteTasks: '永久删除', noEligibleTasks: '所选任务正在运行或已置顶，不能删除。',
+      removeFromProject: '移出 Threadbox 项目', trash: '垃圾箱',
+      moveToTrashConfirm: '任务会移入垃圾箱并归档，工作目录会保留。', moveToTrash: '移入垃圾箱',
+      restoreFromTrash: '从垃圾箱恢复', emptyTrash: '清空垃圾箱',
+      emptyTrashConfirm: '垃圾箱中的任务记录将永久删除，工作目录会保留。',
+      noEligibleTasks: '所选任务正在运行、已置顶或已经在垃圾箱中。',
       officialProject: 'Codex 项目', threadboxProject: 'Threadbox 项目', search: '搜索任务',
       searchPlaceholder: '标题、摘要、目录、来源、ID 或项目', noResults: '没有匹配的任务',
       createAndMove: '新建项目并移动'
@@ -75,9 +82,10 @@ function labels(locale: string): SidebarLabels {
     renameProject: 'Rename project', deleteProject: 'Delete project',
     deleteProjectConfirm: 'Only the project grouping will be deleted. Tasks will become unassigned.',
     moveToProject: 'Move to project', removeFromProject: 'Remove from Threadbox project',
-    deleteTasksConfirm: 'Task records will be permanently deleted. Working directories will be kept.',
-    deleteTasks: 'Delete permanently',
-    noEligibleTasks: 'The selected tasks are running or pinned and cannot be deleted.',
+    trash: 'Trash', moveToTrashConfirm: 'Tasks will be archived and moved to Trash. Working directories will be kept.',
+    moveToTrash: 'Move to Trash', restoreFromTrash: 'Restore from Trash', emptyTrash: 'Empty Trash',
+    emptyTrashConfirm: 'Task records in Trash will be permanently deleted. Working directories will be kept.',
+    noEligibleTasks: 'The selected tasks are running, pinned, or already in Trash.',
     officialProject: 'Codex project', threadboxProject: 'Threadbox project', search: 'Search tasks',
     searchPlaceholder: 'Title, preview, directory, source, ID, or project', noResults: 'No matching tasks',
     createAndMove: 'Create project and move'
@@ -314,7 +322,11 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
     const choices = manualMoveTargets(this.snapshot.projects, this.snapshot.assignments, roots).map((target) => ({
       label: target.kind === 'create'
         ? `$(new-folder) ${copy.createAndMove}`
-        : target.kind === 'remove' ? copy.removeFromProject : target.name,
+        : target.kind === 'remove'
+          ? copy.removeFromProject
+          : this.snapshot.projects.find((project) => project.id === target.projectId)?.systemKind === 'trash'
+            ? copy.trash
+            : target.name,
       description: target.kind === 'project' ? copy.threadboxProject : undefined,
       target
     }))
@@ -378,10 +390,41 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
       .filter((thread) => thread.status !== 'active' && !thread.pinned).map((thread) => thread.id)
     if (ids.length === 0) { await vscode.window.showWarningMessage(copy.noEligibleTasks); return }
     const confirmed = await vscode.window.showWarningMessage(
-      `${copy.deleteTasksConfirm}\n\n${ids.length}`, { modal: true }, copy.deleteTasks)
-    if (confirmed !== copy.deleteTasks) return
+      `${copy.moveToTrashConfirm}\n\n${ids.length}`, { modal: true }, copy.moveToTrash)
+    if (confirmed !== copy.moveToTrash) return
     try {
-      const result = await this.api.deleteThreads(ids, { trashWorkingDirectories: [] })
+      const result = this.api.trashThreads
+        ? await this.api.trashThreads(ids)
+        : await this.api.deleteThreads(ids, { trashWorkingDirectories: [] })
+      if (result.failed.length > 0 || result.skipped.length > 0) {
+        await vscode.window.showWarningMessage(
+          `${result.succeeded.length} succeeded, ${result.failed.length} failed, ${result.skipped.length} skipped.`)
+      }
+      this.refresh()
+    } catch (error) { await this.showError(error) }
+  }
+
+  async restoreThreads(items: readonly SidebarItem[]): Promise<void> {
+    const ids = items.flatMap((item) => item.thread ? [item.thread.id] : [])
+    if (ids.length === 0 || !this.api.restoreThreadsFromTrash) return
+    try {
+      const result = await this.api.restoreThreadsFromTrash(ids)
+      if (result.failed.length > 0 || result.skipped.length > 0) {
+        await vscode.window.showWarningMessage(
+          `${result.succeeded.length} succeeded, ${result.failed.length} failed, ${result.skipped.length} skipped.`)
+      }
+      this.refresh()
+    } catch (error) { await this.showError(error) }
+  }
+
+  async emptyTrash(item?: SidebarItem): Promise<void> {
+    if (item?.project?.systemKind !== 'trash' || !this.api.emptyTrash) return
+    const copy = labels(this.locale)
+    const confirmed = await vscode.window.showWarningMessage(
+      copy.emptyTrashConfirm, { modal: true }, copy.emptyTrash)
+    if (confirmed !== copy.emptyTrash) return
+    try {
+      const result = await this.api.emptyTrash()
       if (result.failed.length > 0 || result.skipped.length > 0) {
         await vscode.window.showWarningMessage(
           `${result.succeeded.length} succeeded, ${result.failed.length} failed, ${result.skipped.length} skipped.`)
@@ -422,7 +465,7 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
     })]
   }
 
-  private threadItems(threads: ThreadRecord[]): SidebarItem[] {
+  private threadItems(threads: ThreadRecord[], inTrash = false): SidebarItem[] {
     const visit = (node: ThreadHierarchyNode): SidebarItem => {
       const thread = node.thread
       const children = node.children.map(visit)
@@ -434,7 +477,10 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
         icon: thread.status === 'active' ? 'sync~spin' : thread.pinned ? 'pinned' : 'comment-discussion',
         command: this.threadCommand(thread), tooltip: `${thread.title}\n${thread.cwd}`,
         children: children.length > 0 ? children : undefined,
-        contextValue: `threadbox.thread.${archive}.${pin}`, thread
+        contextValue: inTrash
+          ? `threadbox.thread.trash.${archive}.${pin}`
+          : `threadbox.thread.${archive}.${pin}`,
+        thread
       })
     }
     return buildVisibleThreadHierarchy(threads).map(visit)
@@ -444,8 +490,10 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
     threads: ThreadRecord[],
     copy: SidebarLabels,
     ownerId: string,
-    allThreads = threads
+    allThreads = threads,
+    inTrash = false
   ): SidebarItem[] {
+    if (inTrash) return this.threadItems(threads, true)
     const active = threads.filter((thread) => !thread.archived)
     const archived = threads.filter((thread) => thread.archived)
     const children = this.threadItems(active)
@@ -475,14 +523,23 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
     const projectItems: SidebarItem[] = customProjects.flatMap((project) => {
       const group = groups.find((item) => item.kind === 'threadboxProject' && item.projectId === project.id)
       const allThreads = group?.threads ?? []
-      const threads = filterSidebarThreads(allThreads, query, project.name)
-      const projectMatches = project.name.toLocaleLowerCase().includes(normalizedQuery)
+      const displayName = project.systemKind === 'trash' ? copy.trash : project.name
+      const threads = filterSidebarThreads(allThreads, query, displayName)
+      const projectMatches = displayName.toLocaleLowerCase().includes(normalizedQuery)
       if (query && threads.length === 0 && !projectMatches) return []
-      return [new SidebarItem(project.name, { kind: 'project',
+      const inTrash = project.systemKind === 'trash'
+      return [new SidebarItem(displayName, { kind: 'project',
         id: `threadbox:project:${project.id}`,
-        description: String(this.visibleCount(threads)), icon: 'folder-library',
-        tooltip: copy.threadboxProject, children: this.projectChildren(threads, copy, project.id, allThreads),
-        contextValue: 'threadbox.project.threadbox.mutable', project })]
+        description: String(inTrash
+          ? threads.filter((thread) => !thread.internal).length
+          : this.visibleCount(threads)),
+        icon: inTrash ? 'trash' : 'folder-library',
+        tooltip: inTrash ? copy.trash : copy.threadboxProject,
+        children: this.projectChildren(threads, copy, project.id, allThreads, inTrash),
+        contextValue: inTrash
+          ? 'threadbox.project.threadbox.trash'
+          : 'threadbox.project.threadbox.mutable',
+        project })]
     })
     for (const group of groups.filter((item) => item.kind === 'desktopProject')) {
       const threads = filterSidebarThreads(group.threads, query, group.name)

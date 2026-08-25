@@ -2,7 +2,7 @@
   "name": "codex-threadbox-vscode",
   "displayName": "Codex Threadbox",
   "description": "Manage Codex tasks locally, including on Remote SSH, Dev Containers, and Codespaces.",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "publisher": "irisNeko",
   "license": "MIT",
   "private": true,
@@ -116,7 +116,17 @@
       },
       {
         "command": "threadbox.delete",
-        "title": "Delete Permanently...",
+        "title": "Move to Trash...",
+        "category": "Threadbox"
+      },
+      {
+        "command": "threadbox.restoreFromTrash",
+        "title": "Restore from Trash",
+        "category": "Threadbox"
+      },
+      {
+        "command": "threadbox.emptyTrash",
+        "title": "Empty Trash...",
         "category": "Threadbox"
       },
       {
@@ -274,7 +284,17 @@
         },
         {
           "command": "threadbox.delete",
-          "when": "view =~ /^threadbox\\.sidebar/ && viewItem =~ /^threadbox\\.thread\\./",
+          "when": "view =~ /^threadbox\\.sidebar/ && viewItem =~ /^threadbox\\.thread\\.(active|archived)\\./",
+          "group": "danger@1"
+        },
+        {
+          "command": "threadbox.restoreFromTrash",
+          "when": "view =~ /^threadbox\\.sidebar/ && viewItem =~ /^threadbox\\.thread\\.trash\\./",
+          "group": "manage@1"
+        },
+        {
+          "command": "threadbox.emptyTrash",
+          "when": "view =~ /^threadbox\\.sidebar/ && viewItem == threadbox.project.threadbox.trash",
           "group": "danger@1"
         }
       ]

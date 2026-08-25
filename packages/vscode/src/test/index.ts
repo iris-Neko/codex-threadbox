@@ -35,6 +35,7 @@ export async function run(): Promise<void> {
     assert(capabilities.host === 'vscode', 'VS Code capabilities were not returned.')
     assert(capabilities.projectManagement, 'VS Code project management was not enabled.')
     assert(capabilities.projectThreadCreation, 'VS Code project task creation was not enabled.')
+    assert(capabilities.taskTrash, 'VS Code task Trash was not enabled.')
     assert(!capabilities.directoryTrash, 'VS Code must not expose directory deletion.')
     assert(!capabilities.desktopRecentsRepair, 'VS Code must not expose Recents repair.')
 
@@ -43,13 +44,36 @@ export async function run(): Promise<void> {
     const listed = await api.listThreads()
     assert(listed.threads.length === 4, 'VS Code did not load active and archived fake tasks.')
     const created = await api.createProject('Extension test')
-    const project = created.projects.find((item) => item.kind === 'threadbox')
+    const trashProject = created.projects.find((item) => item.systemKind === 'trash')
+    assert(trashProject?.readOnly && !trashProject.canCreateThread,
+      'VS Code did not expose the built-in read-only Trash project.')
+    const project = created.projects.find((item) =>
+      item.kind === 'threadbox' && item.systemKind !== 'trash')
     assert(project, 'VS Code did not create a Threadbox project.')
     const assigned = await api.assignThreads(['019f0000-0000-7000-8000-000000000002'], project.id)
     assert(Object.values(assigned.assignments).includes(project.id), 'VS Code did not assign the task.')
     assert(api.createThreadInProject, 'VS Code did not expose project task creation.')
     const localThread = await api.createThreadInProject(project.id, 'Threadbox project task')
     assert(localThread?.projectId === project.id, 'VS Code did not create a Threadbox project task.')
+    assert(api.trashThreads && api.restoreThreadsFromTrash && api.emptyTrash,
+      'VS Code did not expose task Trash operations.')
+    const trashed = await api.trashThreads([localThread.threadId])
+    assert(trashed.succeeded.includes(localThread.threadId), 'VS Code did not move the task to Trash.')
+    const afterTrash = await api.listProjects()
+    assert(afterTrash.assignments[localThread.threadId] === trashProject.id,
+      'VS Code did not store the task in the built-in Trash project.')
+    const restored = await api.restoreThreadsFromTrash([localThread.threadId])
+    assert(restored.succeeded.includes(localThread.threadId), 'VS Code did not restore the task from Trash.')
+    const afterRestore = await api.listProjects()
+    assert(afterRestore.assignments[localThread.threadId] === project.id,
+      'VS Code did not restore the task to its previous Threadbox project.')
+    const disposableThread = await api.createThreadInProject(project.id, 'Disposable task')
+    assert(disposableThread, 'VS Code did not create the task used to test Empty Trash.')
+    await api.trashThreads([disposableThread.threadId])
+    const emptied = await api.emptyTrash()
+    assert(emptied.succeeded.includes(disposableThread.threadId), 'VS Code did not empty Trash.')
+    assert(!(await api.listThreads()).threads.some((item) => item.id === disposableThread.threadId),
+      'Empty Trash did not permanently remove the task record.')
     const officialSnapshot = await api.listProjects()
     assert(officialSnapshot.canManageOfficialProjects,
       'VS Code did not enable official Codex project management.')
@@ -90,6 +114,8 @@ export async function run(): Promise<void> {
     assert(commands.includes('threadbox.newThreadInProject'),
       'Threadbox project task creation command was not registered.')
     assert(commands.includes('threadbox.moveToProject'), 'Threadbox task move command was not registered.')
+    assert(commands.includes('threadbox.restoreFromTrash'), 'Threadbox Trash restore command was not registered.')
+    assert(commands.includes('threadbox.emptyTrash'), 'Threadbox Empty Trash command was not registered.')
     assert(commands.includes('threadbox.openInCodex'), 'Threadbox Codex task command was not registered.')
     assert(commands.includes('threadbox.openInCodexOnDoubleClick'),
       'Threadbox double-click task command was not registered.')

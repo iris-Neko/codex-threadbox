@@ -118,10 +118,13 @@ export interface AppSettings {
 
 export type ProjectKind = 'threadbox' | 'official'
 
+export type ProjectSystemKind = 'trash'
+
 export interface ProjectRecord {
   id: string
   name: string
   kind: ProjectKind
+  systemKind?: ProjectSystemKind | null
   readOnly: boolean
   codexProjectId: string | null
   roots: string[]
@@ -148,6 +151,7 @@ export interface PlatformCapabilities {
   openWorkingDirectory: boolean
   currentWorkspaceDirectories: string[]
   projectThreadCreation?: boolean
+  taskTrash?: boolean
 }
 
 export interface CreatedProjectThread {
@@ -162,6 +166,9 @@ export interface ThreadboxApi {
   getEnvironmentStatus(): Promise<EnvironmentStatus>
   listThreads(): Promise<ListThreadsResult>
   deleteThreads(ids: string[], options: DeleteThreadsOptions): Promise<BatchOperationResult>
+  trashThreads?(ids: string[]): Promise<BatchOperationResult>
+  restoreThreadsFromTrash?(ids: string[]): Promise<BatchOperationResult>
+  emptyTrash?(): Promise<BatchOperationResult>
   repairDesktopRecents(): Promise<DesktopRecentsRepairResult>
   archiveThreads(ids: string[]): Promise<BatchOperationResult>
   unarchiveThreads(ids: string[]): Promise<BatchOperationResult>

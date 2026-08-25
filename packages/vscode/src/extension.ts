@@ -27,6 +27,8 @@ import {
   CODEX_SECONDARY_CONTAINER,
   findKnownCodexViewContainers
 } from './sidebar-location'
+import { migrateLegacyProjectStorage } from './storage-migration'
+import { TrashController } from './trash-controller'
 import { requireWorkspaceTrust } from './workspace-trust'
 
 const CONFIGURATION = 'threadbox'
@@ -49,6 +51,8 @@ const SIDEBAR_COMMANDS = {
   pin: 'threadbox.pin',
   unpin: 'threadbox.unpin',
   delete: 'threadbox.delete',
+  restoreFromTrash: 'threadbox.restoreFromTrash',
+  emptyTrash: 'threadbox.emptyTrash',
   copyId: 'threadbox.copyId',
   openDirectory: 'threadbox.openDirectory',
   openInCodex: 'threadbox.openInCodex',
@@ -164,7 +168,8 @@ function platformCapabilities(): PlatformCapabilities {
     chooseCliPath: false,
     openWorkingDirectory: true,
     currentWorkspaceDirectories,
-    projectThreadCreation: true
+    projectThreadCreation: true,
+    taskTrash: true
   }
 }
 
@@ -187,6 +192,7 @@ async function refreshProjectSnapshot(
 }
 
 function createApi(runtime: RuntimeHost, projects: ProjectStore): ThreadboxApi {
+  const trash = (): TrashController => new TrashController(runtime.getService(), projects)
   return {
     getPlatformCapabilities: async () => platformCapabilities(),
     getEnvironmentStatus: async () => {
@@ -204,7 +210,19 @@ function createApi(runtime: RuntimeHost, projects: ProjectStore): ThreadboxApi {
     },
     deleteThreads: async (ids) => {
       requireWorkspaceTrust(vscode.workspace.isTrusted)
-      return runtime.getService().deleteThreads(ids, { trashWorkingDirectories: [] })
+      return trash().trash(ids)
+    },
+    trashThreads: async (ids) => {
+      requireWorkspaceTrust(vscode.workspace.isTrusted)
+      return trash().trash(ids)
+    },
+    restoreThreadsFromTrash: async (ids) => {
+      requireWorkspaceTrust(vscode.workspace.isTrusted)
+      return trash().restore(ids)
+    },
+    emptyTrash: async () => {
+      requireWorkspaceTrust(vscode.workspace.isTrusted)
+      return trash().empty()
     },
     repairDesktopRecents: async () => unavailableRecents(),
     archiveThreads: async (ids) => {
@@ -295,12 +313,16 @@ function createApi(runtime: RuntimeHost, projects: ProjectStore): ThreadboxApi {
     },
     assignThreads: async (ids, projectId) => {
       requireWorkspaceTrust(vscode.workspace.isTrusted)
-      return projects.assign(ids, projectId)
+      return trash().assign(ids, projectId)
     },
     createThreadInProject: async (projectId, name) => {
       requireWorkspaceTrust(vscode.workspace.isTrusted)
       const project = await projects.getProject(projectId)
       if (!project) throw new Error('Project not found.')
+      if (!project.canCreateThread) {
+        throw new Error(project.createThreadUnavailableReason ??
+          'Tasks cannot be created in this project.')
+      }
       const cwd = await chooseProjectDirectory(project, {
         pickRoot: async (roots) => {
           const choice = await vscode.window.showQuickPick(
@@ -400,7 +422,8 @@ function attachRpc(
     let response: RpcResponse
     try {
       response = { kind: 'threadbox.response', id: request.id, ok: true, value: await dispatch(api, request) }
-      if (['deleteThreads', 'archiveThreads', 'unarchiveThreads', 'setPinned', 'updateSettings',
+      if (['deleteThreads', 'trashThreads', 'restoreThreadsFromTrash', 'emptyTrash',
+        'archiveThreads', 'unarchiveThreads', 'setPinned', 'updateSettings',
         'createProject', 'createOfficialProject', 'renameProject', 'deleteProject', 'assignThreads',
         'createThreadInProject']
         .includes(request.method)) onMutation()
@@ -421,8 +444,9 @@ export interface ThreadboxExtensionApi {
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<ThreadboxExtensionApi> {
-  const version = String(context.extension.packageJSON.version ?? '0.5.0')
+  const version = String(context.extension.packageJSON.version ?? '0.6.0')
   const runtime = new RuntimeHost(version)
+  await migrateLegacyProjectStorage(context.globalStorageUri.fsPath)
   const projects = new ProjectStore(join(context.globalStorageUri.fsPath, 'projects-v1.json'))
   const api = createApi(runtime, projects)
   const sidebar = new ThreadboxSidebarProvider(
@@ -500,6 +524,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<Thread
     vscode.commands.registerCommand(SIDEBAR_COMMANDS.delete,
       (item?: SidebarItem, selection?: SidebarItem[]) =>
         sidebar.deleteThreads(selectedItems(item, selection))),
+    vscode.commands.registerCommand(SIDEBAR_COMMANDS.restoreFromTrash,
+      (item?: SidebarItem, selection?: SidebarItem[]) =>
+        sidebar.restoreThreads(selectedItems(item, selection))),
+    vscode.commands.registerCommand(SIDEBAR_COMMANDS.emptyTrash,
+      (item?: SidebarItem) => sidebar.emptyTrash(item)),
     vscode.commands.registerCommand(SIDEBAR_COMMANDS.copyId,
       (item?: SidebarItem, selection?: SidebarItem[]) =>
         sidebar.copyIds(selectedItems(item, selection))),

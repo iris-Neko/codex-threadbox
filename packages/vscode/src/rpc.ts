@@ -22,6 +22,9 @@ const METHODS = new Set<RpcMethod>([
   'getEnvironmentStatus',
   'listThreads',
   'deleteThreads',
+  'trashThreads',
+  'restoreThreadsFromTrash',
+  'emptyTrash',
   'repairDesktopRecents',
   'archiveThreads',
   'unarchiveThreads',
@@ -60,8 +63,9 @@ function isIds(value: unknown): value is string[] {
 
 function validArgs(method: RpcMethod, args: unknown[]): boolean {
   if (['getPlatformCapabilities', 'getEnvironmentStatus', 'listThreads', 'repairDesktopRecents',
-    'chooseCliPath', 'getSettings', 'listProjects'].includes(method)) return args.length === 0
-  if (['archiveThreads', 'unarchiveThreads'].includes(method)) return args.length === 1 && isIds(args[0])
+    'chooseCliPath', 'getSettings', 'listProjects', 'emptyTrash'].includes(method)) return args.length === 0
+  if (['archiveThreads', 'unarchiveThreads', 'trashThreads', 'restoreThreadsFromTrash']
+    .includes(method)) return args.length === 1 && isIds(args[0])
   if (method === 'setPinned') {
     return args.length === 2 && isIds(args[0]) && typeof args[1] === 'boolean'
   }
