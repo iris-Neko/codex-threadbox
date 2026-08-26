@@ -46,6 +46,10 @@ function started(threadId = 'thread-new'): unknown {
   return { thread: { id: threadId } }
 }
 
+function persisted(threadId: string, name: string): unknown {
+  return { thread: { id: threadId, name, ephemeral: false } }
+}
+
 describe('VS Code Codex projects', () => {
   it('chooses the only root, prompts for multiple roots, and browses empty projects', async () => {
     const pickRoot = vi.fn(async () => '/work/two')
@@ -78,13 +82,15 @@ describe('VS Code Codex projects', () => {
   it('creates and names a blank task before assigning a Threadbox project', async () => {
     const client = new FakeClient()
     client.responses.set('thread/start', [started()])
+    client.responses.set('thread/read', [persisted('thread-new', 'New task')])
     const assign = vi.fn(async () => undefined)
 
     await expect(createProjectThread(client, project(), '  New task  ', '/work/app', assign))
       .resolves.toMatchObject({ threadId: 'thread-new', name: 'New task' })
     expect(client.calls).toEqual([
       { method: 'thread/start', params: { cwd: '/work/app' } },
-      { method: 'thread/name/set', params: { threadId: 'thread-new', name: 'New task' } }
+      { method: 'thread/name/set', params: { threadId: 'thread-new', name: 'New task' } },
+      { method: 'thread/read', params: { threadId: 'thread-new', includeTurns: false } }
     ])
     expect(assign).toHaveBeenCalledWith('thread-new', 'threadbox:one')
   })
@@ -118,6 +124,7 @@ describe('VS Code Codex projects', () => {
 
     const assignmentClient = new FakeClient()
     assignmentClient.responses.set('thread/start', [started('assign-failed')])
+    assignmentClient.responses.set('thread/read', [persisted('assign-failed', 'Name')])
     await expect(createProjectThread(
       assignmentClient,
       project(),
@@ -127,6 +134,16 @@ describe('VS Code Codex projects', () => {
     )).rejects.toThrow('assignment failed')
     expect(assignmentClient.calls.at(-1)).toEqual({
       method: 'thread/delete', params: { threadId: 'assign-failed' }
+    })
+
+    const verificationClient = new FakeClient()
+    verificationClient.responses.set('thread/start', [started('verify-failed')])
+    verificationClient.failures.set('thread/read', new Error('task was not persisted'))
+    await expect(createProjectThread(
+      verificationClient, project(), 'Name', '/work/app', async () => undefined
+    )).rejects.toThrow('task was not persisted')
+    expect(verificationClient.calls.at(-1)).toEqual({
+      method: 'thread/delete', params: { threadId: 'verify-failed' }
     })
   })
 

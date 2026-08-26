@@ -177,6 +177,15 @@ function directoryUri(path: string): vscode.Uri {
   return remoteBase ? remoteBase.with({ path }) : vscode.Uri.file(path)
 }
 
+async function serviceWithProjectThreads(
+  runtime: RuntimeHost,
+  projects: ProjectStore
+): Promise<ThreadService> {
+  const service = runtime.getService()
+  service.setSupplementalThreadReferences(await projects.inventoryReferences())
+  return service
+}
+
 function createApi(runtime: RuntimeHost, projects: ProjectStore): ThreadboxApi {
   const trash = (): TrashController => new TrashController(runtime.getService(), projects)
   return {
@@ -187,7 +196,7 @@ function createApi(runtime: RuntimeHost, projects: ProjectStore): ThreadboxApi {
     },
     listThreads: async () => {
       requireWorkspaceTrust(vscode.workspace.isTrusted)
-      const result = await runtime.getService().listThreads()
+      const result = await (await serviceWithProjectThreads(runtime, projects)).listThreads()
       await projects.setInventory(result.threads)
       return result
     },
@@ -210,15 +219,15 @@ function createApi(runtime: RuntimeHost, projects: ProjectStore): ThreadboxApi {
     repairDesktopRecents: async () => unavailableRecents(),
     archiveThreads: async (ids) => {
       requireWorkspaceTrust(vscode.workspace.isTrusted)
-      return runtime.getService().archiveThreads(ids)
+      return (await serviceWithProjectThreads(runtime, projects)).archiveThreads(ids)
     },
     unarchiveThreads: async (ids) => {
       requireWorkspaceTrust(vscode.workspace.isTrusted)
-      return runtime.getService().unarchiveThreads(ids)
+      return (await serviceWithProjectThreads(runtime, projects)).unarchiveThreads(ids)
     },
     setPinned: async (ids, pinned) => {
       requireWorkspaceTrust(vscode.workspace.isTrusted)
-      return runtime.getService().setPinned(ids, pinned)
+      return (await serviceWithProjectThreads(runtime, projects)).setPinned(ids, pinned)
     },
     listProjects: async () => {
       requireWorkspaceTrust(vscode.workspace.isTrusted)
@@ -238,7 +247,7 @@ function createApi(runtime: RuntimeHost, projects: ProjectStore): ThreadboxApi {
           : 'No workspace is open in the current window.')
         return null
       }
-      const result = await runtime.getService().listThreads()
+      const result = await (await serviceWithProjectThreads(runtime, projects)).listThreads()
       await projects.setInventory(result.threads, { persistPruning: false })
       const preview = await projects.previewWorkspaceImport(roots)
       if (preview.rootIds.length === 0) {
@@ -417,7 +426,7 @@ export interface ThreadboxExtensionApi {
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<ThreadboxExtensionApi> {
-  const version = String(context.extension.packageJSON.version ?? '0.7.0')
+  const version = String(context.extension.packageJSON.version ?? '0.7.1')
   const runtime = new RuntimeHost(version)
   await migrateLegacyProjectStorage(context.globalStorageUri.fsPath)
   const projects = new ProjectStore(join(context.globalStorageUri.fsPath, 'projects-v1.json'))

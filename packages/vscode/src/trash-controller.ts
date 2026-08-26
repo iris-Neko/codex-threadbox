@@ -9,6 +9,7 @@ import type {
 import type { ProjectStore } from './project-store'
 
 interface TrashThreadService {
+  setSupplementalThreadReferences?(references: readonly { id: string; archived: boolean }[]): void
   listThreads(): Promise<ListThreadsResult>
   previewDeleteThreads(ids: string[]): Promise<DeletePreview>
   archiveThreads(ids: string[]): Promise<BatchOperationResult>
@@ -49,7 +50,12 @@ export class TrashController {
     private readonly projects: ProjectStore
   ) {}
 
+  private async prepareService(): Promise<void> {
+    this.service.setSupplementalThreadReferences?.(await this.projects.inventoryReferences())
+  }
+
   async trash(ids: string[]): Promise<BatchOperationResult> {
+    await this.prepareService()
     const preview = await this.service.previewDeleteThreads(ids)
     const listed = await this.service.listThreads()
     await this.projects.setInventory(listed.threads)
@@ -99,6 +105,7 @@ export class TrashController {
   }
 
   async restore(ids: string[], projectId?: string | null): Promise<BatchOperationResult> {
+    await this.prepareService()
     const listed = await this.service.listThreads()
     await this.projects.setInventory(listed.threads)
     const byId = new Map(listed.threads.map((thread) => [thread.id, thread]))
@@ -148,6 +155,7 @@ export class TrashController {
   }
 
   async assign(ids: string[], projectId: string | null): Promise<ProjectSnapshot> {
+    await this.prepareService()
     const listed = await this.service.listThreads()
     await this.projects.setInventory(listed.threads)
     const trashId = await this.projects.getTrashProjectId()
@@ -166,6 +174,7 @@ export class TrashController {
   }
 
   async empty(): Promise<BatchOperationResult> {
+    await this.prepareService()
     const listed = await this.service.listThreads()
     await this.projects.setInventory(listed.threads)
     const roots = await this.projects.listTrashRoots()

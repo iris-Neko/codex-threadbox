@@ -69,6 +69,9 @@ export async function run(): Promise<void> {
     assert(api.createThreadInProject, 'VS Code did not expose project task creation.')
     const localThread = await api.createThreadInProject(project.id, 'Threadbox project task')
     assert(localThread?.projectId === project.id, 'VS Code did not create a Threadbox project task.')
+    const afterCreate = await api.listThreads()
+    assert(afterCreate.threads.some((item) => item.id === localThread.threadId),
+      'VS Code did not show a blank task omitted from thread/list.')
     assert(api.trashThreads && api.restoreThreadsFromTrash && api.emptyTrash,
       'VS Code did not expose task Trash operations.')
     const trashed = await api.trashThreads([localThread.threadId])

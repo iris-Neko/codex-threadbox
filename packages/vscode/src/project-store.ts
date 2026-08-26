@@ -170,6 +170,11 @@ export interface WorkspaceImportResult {
   alreadyImported: boolean
 }
 
+export interface ProjectThreadReference {
+  id: string
+  archived: boolean
+}
+
 interface SetInventoryOptions {
   persistPruning?: boolean
 }
@@ -214,6 +219,15 @@ export class ProjectStore {
 
   async list(): Promise<ProjectSnapshot> {
     return this.snapshot(await this.load())
+  }
+
+  async inventoryReferences(): Promise<ProjectThreadReference[]> {
+    const data = await this.load()
+    const trashId = this.trashProject(data).id
+    return Object.entries(data.assignments).map(([id, projectId]) => ({
+      id,
+      archived: projectId === trashId
+    }))
   }
 
   async getProject(id: string): Promise<ProjectRecord | null> {

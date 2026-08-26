@@ -127,6 +127,13 @@ function log(message) {
 log({ event: 'server-start', pid: process.pid })
 let activeListRequests = 0
 let createdThreadSequence = 0
+const created = new Map()
+
+function findThread(threadId) {
+  return active.find((item) => item.id === threadId) ??
+    archived.find((item) => item.id === threadId) ??
+    created.get(threadId)
+}
 
 readline.createInterface({ input: process.stdin }).on('line', (line) => {
   let message
@@ -175,15 +182,24 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
       createdAt: now,
       updatedAt: now
     }
-    active.push(thread)
+    // Real App Server keeps a blank task readable by ID but omits it from
+    // thread/list until the conversation has a first turn.
+    created.set(id, thread)
     send({ id: message.id, result: { thread } })
   } else if (message.method === 'thread/name/set') {
-    const thread = active.find((item) => item.id === message.params.threadId)
+    const thread = findThread(message.params.threadId)
     if (thread) thread.name = message.params.name
     send({ id: message.id, result: {} })
+  } else if (message.method === 'thread/read') {
+    const thread = findThread(message.params.threadId)
+    if (thread) send({ id: message.id, result: { thread } })
+    else send({ id: message.id, error: { code: -32000, message: `thread not loaded: ${message.params.threadId}` } })
   } else if (message.method === 'thread/delete') {
-    const index = active.findIndex((item) => item.id === message.params.threadId)
-    if (index >= 0) active.splice(index, 1)
+    const activeIndex = active.findIndex((item) => item.id === message.params.threadId)
+    if (activeIndex >= 0) active.splice(activeIndex, 1)
+    const archivedIndex = archived.findIndex((item) => item.id === message.params.threadId)
+    if (archivedIndex >= 0) archived.splice(archivedIndex, 1)
+    created.delete(message.params.threadId)
     send({ id: message.id, result: {} })
   } else if (message.id !== undefined) {
     send({ id: message.id, result: {} })

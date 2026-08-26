@@ -4,6 +4,7 @@ import type {
 } from '../../../src/shared/contracts'
 import type { ThreadStartParams } from '../../../src/shared/protocol/generated/v2/ThreadStartParams'
 import type { ThreadStartResponse } from '../../../src/shared/protocol/generated/v2/ThreadStartResponse'
+import type { ThreadReadResponse } from '../../../src/shared/protocol/generated/v2/ThreadReadResponse'
 import type { RpcClientLike } from '../../core/src/app-server-client'
 
 export interface DirectoryPicker {
@@ -55,6 +56,14 @@ export async function createProjectThread(
     const started = await client.request<ThreadStartResponse>('thread/start', params)
     threadId = started.thread.id
     await client.request('thread/name/set', { threadId, name: normalizedName })
+    const verified = await client.request<ThreadReadResponse>('thread/read', {
+      threadId,
+      includeTurns: false
+    })
+    if (verified.thread.id !== threadId || verified.thread.ephemeral ||
+      verified.thread.name !== normalizedName) {
+      throw new Error('Codex did not persist the new blank task.')
+    }
     await assignThreadbox(threadId, project.id)
     return { threadId, name: normalizedName, cwd, projectId: project.id }
   } catch (error) {

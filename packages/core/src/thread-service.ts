@@ -11,6 +11,7 @@ import type {
 } from '../../../src/shared/contracts'
 import type { Thread } from '../../../src/shared/protocol/generated/v2/Thread'
 import type { ThreadListResponse } from '../../../src/shared/protocol/generated/v2/ThreadListResponse'
+import type { ThreadReadResponse } from '../../../src/shared/protocol/generated/v2/ThreadReadResponse'
 import type { ThreadSourceKind } from '../../../src/shared/protocol/generated/v2/ThreadSourceKind'
 import type { RpcClientLike } from './app-server-client'
 import {
@@ -34,6 +35,11 @@ const SOURCE_KINDS: ThreadSourceKind[] = [
 
 interface InventoryEntry {
   thread: Thread
+  archived: boolean
+}
+
+export interface SupplementalThreadReference {
+  id: string
   archived: boolean
 }
 
@@ -88,15 +94,29 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+function isMissingThreadError(error: unknown): boolean {
+  return /thread (?:not loaded|not found)/iu.test(errorMessage(error))
+}
+
 export class ThreadService {
   private lastKnownDirectories = new Set<string>()
   private lastKnownThreadIds = new Set<string>()
+  private supplementalThreads = new Map<string, boolean>()
 
   constructor(
     private readonly client: RpcClientLike,
     private readonly directoryCleaner?: WorkingDirectoryCleanerLike,
     private readonly desktopRecentsRepair?: DesktopRecentsRepairLike
   ) {}
+
+  setSupplementalThreadReferences(references: readonly SupplementalThreadReference[]): void {
+    this.supplementalThreads = new Map(
+      references.filter((reference) => reference.id).map((reference) => [
+        reference.id,
+        reference.archived
+      ])
+    )
+  }
 
   async listThreads(): Promise<ListThreadsResult> {
     const { entries, pinnedIds, environment } = await this.inventory()
@@ -254,6 +274,24 @@ export class ThreadService {
     const merged = new Map<string, InventoryEntry>()
     for (const thread of active) merged.set(thread.id, { thread, archived: false })
     for (const thread of archived) merged.set(thread.id, { thread, archived: true })
+
+    for (const [threadId, isArchived] of this.supplementalThreads) {
+      if (merged.has(threadId)) continue
+      try {
+        const response = await this.client.request<ThreadReadResponse>('thread/read', {
+          threadId,
+          includeTurns: false
+        })
+        if (response.thread.id !== threadId) {
+          throw new Error(`thread/read returned a different task ID for ${threadId}.`)
+        }
+        if (!response.thread.ephemeral) {
+          merged.set(threadId, { thread: response.thread, archived: isArchived })
+        }
+      } catch (error) {
+        if (!isMissingThreadError(error)) throw error
+      }
+    }
 
     const pinnedIds = new Set<string>()
     if (probe.status.capabilities.pinning) {

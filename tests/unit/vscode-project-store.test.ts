@@ -72,6 +72,14 @@ describe('VS Code project store', () => {
     const project = (await store.create('Focus')).projects.find((item) => item.name === 'Focus')!
     await store.assignCreatedThread('new-thread', project.id)
     expect((await store.list()).assignments).toEqual({ 'new-thread': project.id })
+    expect(await store.inventoryReferences()).toEqual([
+      { id: 'new-thread', archived: false }
+    ])
+    await store.setInventory([record({ id: 'new-thread' })])
+    await store.moveToTrash(['new-thread'])
+    expect(await store.inventoryReferences()).toEqual([
+      { id: 'new-thread', archived: true }
+    ])
   })
 
   it('imports matching workspace roots atomically and moves existing assignments', async () => {

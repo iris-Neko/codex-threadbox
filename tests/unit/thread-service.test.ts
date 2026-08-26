@@ -47,6 +47,7 @@ function thread(id: string, overrides: Partial<Thread> = {}): Thread {
 
 class FakeClient implements RpcClientLike {
   readonly calls: Array<{ method: string; params: Record<string, unknown> }> = []
+  readonly readable = new Map<string, Thread>()
   failDeleteId: string | null = null
 
   constructor(
@@ -63,6 +64,11 @@ class FakeClient implements RpcClientLike {
       const source = params.archived ? this.archived : this.active
       const data = params.isPinned ? source.filter((item) => this.pinned.has(item.id)) : source
       return { data, nextCursor: null, backwardsCursor: null } as T
+    }
+    if (method === 'thread/read') {
+      const value = this.readable.get(String(params.threadId))
+      if (!value) throw new Error(`thread not loaded: ${String(params.threadId)}`)
+      return { thread: value } as T
     }
     if (method === 'thread/delete' && params.threadId === this.failDeleteId) {
       throw new Error('delete failed')
@@ -148,6 +154,37 @@ describe('ThreadService', () => {
       source: 'subAgentThreadSpawn'
     })
     expect(result.threads.find((item) => item.id === 'archived')?.archived).toBe(true)
+  })
+
+  it('hydrates assigned blank tasks that thread/list omits', async () => {
+    const client = new FakeClient([], [])
+    client.readable.set('blank', thread('blank', {
+      name: 'Blank task', preview: '', source: 'vscode'
+    }))
+    client.readable.set('archived-blank', thread('archived-blank', {
+      name: 'Archived blank task', preview: '', source: 'vscode'
+    }))
+    const service = new ThreadService(client)
+    service.setSupplementalThreadReferences([
+      { id: 'blank', archived: false },
+      { id: 'archived-blank', archived: true },
+      { id: 'deleted', archived: true }
+    ])
+
+    const result = await service.listThreads()
+
+    expect(result.threads).toHaveLength(2)
+    expect(result.threads.find((item) => item.id === 'blank')).toMatchObject({
+      id: 'blank', title: 'Blank task', archived: false
+    })
+    expect(result.threads.find((item) => item.id === 'archived-blank')).toMatchObject({
+      id: 'archived-blank', title: 'Archived blank task', archived: true
+    })
+    expect(client.calls.filter((call) => call.method === 'thread/read')).toEqual([
+      { method: 'thread/read', params: { threadId: 'blank', includeTurns: false } },
+      { method: 'thread/read', params: { threadId: 'archived-blank', includeTurns: false } },
+      { method: 'thread/read', params: { threadId: 'deleted', includeTurns: false } }
+    ])
   })
 
   it('classifies system and user-spawned subagent sources', async () => {
