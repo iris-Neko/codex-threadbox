@@ -9,7 +9,7 @@ const ready: EnvironmentStatus = {
   state: 'ready',
   cliPath: 'codex',
   cliVersion: '0.150.0',
-  minimumVersion: '0.149.0',
+  minimumVersion: '0.150.0',
   message: null,
   externalCodexProcesses: 0,
   capabilities: { pinning: true }
@@ -120,6 +120,70 @@ describe('ThreadService', () => {
     const result = await new ThreadService(client).listThreads()
     expect(result.threads.map((item) => item.id).toSorted()).toEqual(['first', 'second'])
     expect(activeCalls).toBe(2)
+    expect(result.inventory).toEqual({ state: 'complete', message: null })
+  })
+
+  it('returns loaded pages and continues with archived tasks when a later page fails', async () => {
+    const calls: Array<{
+      method: string
+      params: Record<string, unknown>
+      timeoutMs: number | undefined
+    }> = []
+    const client: RpcClientLike = {
+      getProbe: async (force) => {
+        expect(force).not.toBe(true)
+        return {
+          command: 'codex',
+          status: { ...ready, capabilities: { pinning: false } }
+        }
+      },
+      restart: async () => undefined,
+      request: async <T,>(method: string, rawParams: unknown = {}, timeoutMs?: number) => {
+        const params = rawParams as Record<string, unknown>
+        calls.push({ method, params, timeoutMs })
+        if (params.archived) {
+          return {
+            data: [thread('archived')], nextCursor: null, backwardsCursor: null
+          } as T
+        }
+        if (params.cursor) throw new Error('slow rollout scan')
+        return {
+          data: [thread('active')], nextCursor: 'next-page', backwardsCursor: null
+        } as T
+      }
+    }
+
+    const result = await new ThreadService(client).listThreads({
+      allowPartial: true,
+      refreshEnvironment: false,
+      requestTimeoutMs: 5_000,
+      useStateDbOnly: true
+    })
+
+    expect(result.threads.map((item) => item.id).toSorted()).toEqual(['active', 'archived'])
+    expect(result.inventory.state).toBe('partial')
+    expect(result.inventory.message).toContain('slow rollout scan')
+    expect(calls).toHaveLength(3)
+    expect(calls.every((call) => call.timeoutMs === 5_000)).toBe(true)
+    expect(calls.every((call) => call.params.useStateDbOnly === true)).toBe(true)
+  })
+
+  it('keeps mutation inventory strict when task listing fails', async () => {
+    const calls: string[] = []
+    const client: RpcClientLike = {
+      getProbe: async () => ({ command: 'codex', status: ready }),
+      restart: async () => undefined,
+      request: async <T,>(method: string) => {
+        calls.push(method)
+        if (method === 'thread/list') throw new Error('inventory unavailable')
+        return {} as T
+      }
+    }
+
+    await expect(new ThreadService(client).deleteThreads(['one'])).rejects.toThrow(
+      'inventory unavailable'
+    )
+    expect(calls).toEqual(['thread/list'])
   })
 
   it('merges active and archived tasks and calculates descendants', async () => {
@@ -318,7 +382,7 @@ describe('ThreadService', () => {
   })
 
   it('reports pinning as unsupported without sending a mutation', async () => {
-    const environment = { ...ready, cliVersion: '0.149.0', capabilities: { pinning: false } }
+    const environment = { ...ready, capabilities: { pinning: false } }
     const client = new FakeClient([thread('one')], [], new Set(), environment)
     const service = new ThreadService(client)
 

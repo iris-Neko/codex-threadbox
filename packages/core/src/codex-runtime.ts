@@ -5,7 +5,7 @@ import { delimiter, extname, isAbsolute, join } from 'node:path'
 import semver from 'semver'
 import type { EnvironmentStatus } from '../../../src/shared/contracts'
 
-export const MINIMUM_CODEX_VERSION = '0.149.0'
+export const MINIMUM_CODEX_VERSION = '0.150.0'
 const PINNING_VERSION = '0.150.0'
 const PROBE_TTL_MS = 10_000
 

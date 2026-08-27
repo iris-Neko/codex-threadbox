@@ -2,7 +2,7 @@ const readline = require('node:readline')
 const { appendFileSync } = require('node:fs')
 
 if (process.argv.includes('--version')) {
-  process.stdout.write('codex-cli 0.149.0\n')
+  process.stdout.write('codex-cli 0.150.1\n')
   process.exit(0)
 }
 
@@ -37,7 +37,7 @@ const active = [
     status: { type: 'notLoaded' },
     path: null,
     cwd: demoDirectory,
-    cliVersion: '0.149.0',
+    cliVersion: '0.150.1',
     source: 'vscode',
     threadSource: null,
     agentNickname: null,
@@ -63,7 +63,7 @@ const active = [
     status: { type: 'notLoaded' },
     path: null,
     cwd: demoDirectory,
-    cliVersion: '0.149.0',
+    cliVersion: '0.150.1',
     source: { subAgent: { thread_spawn: { parent_thread_id: 'parent', depth: 1 } } },
     threadSource: null,
     agentNickname: null,
@@ -89,7 +89,7 @@ const active = [
     status: { type: 'notLoaded' },
     path: null,
     cwd: projectDirectory,
-    cliVersion: '0.149.0',
+    cliVersion: '0.150.1',
     source: 'appServer',
     threadSource: null,
     agentNickname: null,
@@ -162,7 +162,7 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
     send({
       id: message.id,
       result: {
-        data: message.params.archived ? archived : activeData,
+        data: message.params.isPinned ? [] : message.params.archived ? archived : activeData,
         nextCursor: null,
         backwardsCursor: null
       }

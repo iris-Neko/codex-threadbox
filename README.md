@@ -44,7 +44,7 @@ The CLI and VS Code extension always preserve working directories. Unsupported a
 
 ## Requirements
 
-- Codex CLI `0.149.0` or newer available on `PATH`.
+- Codex CLI `0.150.0` or newer available on `PATH`.
 - Desktop: Windows 10/11, macOS, or a modern Linux desktop.
 - CLI: Node.js `22.13.0` or newer.
 - Extension: VS Code `1.96.0` or newer. Remote sessions require Codex on the remote extension host.
@@ -108,7 +108,7 @@ Project files are kept by default. The deletion dialog lists the exact task `cwd
 
 The CLI and VS Code extension do not contain the operating-system directory Trash or Recents adapters. CLI deletion removes task records directly through App Server. VS Code ordinary deletion uses its metadata-only, archive-backed task Trash; only **Empty Trash** permanently removes those task records through App Server. Both products always preserve working directories.
 
-Codex `0.149.0` does not yet expose pin metadata in its stable App Server schema. Threadbox keeps pin controls capability-gated and enables them only when the installed stable CLI advertises the required API. It never works around a missing task API by modifying Codex task state files.
+This release is validated against the two latest stable Codex CLI versions, `0.150.0` and `0.150.1`. Codex `0.149.x` and older are unsupported. Newer versions remain forward-compatible on a best-effort basis: unknown response fields are accepted, while optional controls such as pinning stay capability-gated. Threadbox never works around a missing task API by modifying Codex task state files.
 
 Runtime status belongs to an App Server process, so a separate Threadbox process cannot guarantee that it sees work running inside another Codex desktop or IDE process. Threadbox displays a warning whenever other Codex processes are detected.
 

@@ -97,7 +97,7 @@ export class AppServerClient implements RpcClientLike {
   }
 
   private async start(): Promise<void> {
-    const probe = await this.runtime.probe(true)
+    const probe = await this.runtime.probe()
     if (probe.status.state !== 'ready') {
       throw new Error(probe.status.message ?? 'Codex CLI is not ready.')
     }
@@ -136,7 +136,11 @@ export class AppServerClient implements RpcClientLike {
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id)
-        reject(new Error(`${method} timed out.`))
+        reject(new Error(
+          `${method} timed out after ${timeoutMs} ms. ` +
+          'Codex App Server was stopped and will restart on the next request.'
+        ))
+        this.stop()
       }, timeoutMs)
 
       this.pending.set(id, {

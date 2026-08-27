@@ -30,6 +30,8 @@ interface SidebarLabels {
   archived: string
   workspaceTrust: string
   unavailable: string
+  loadFailed: string
+  partialInventory: string
   newProject: string
   newThread: string
   threadName: string
@@ -58,7 +60,8 @@ function labels(locale: string): SidebarLabels {
     return {
       settings: '打开设置', ready: '就绪', projects: '项目',
       unassigned: '未归属', archived: '已归档', workspaceTrust: '需要信任工作区才能读取 Codex 任务',
-      unavailable: 'Codex CLI 不可用', newProject: '新建项目', projectName: '项目名称',
+      unavailable: 'Codex CLI 不可用', loadFailed: '任务列表载入失败',
+      partialInventory: '部分任务未载入', newProject: '新建项目', projectName: '项目名称',
       newThread: '新建对话', threadName: '对话名称', threadCreated: '已创建对话',
       renameProject: '重命名项目', deleteProject: '删除项目',
       deleteProjectConfirm: '只删除项目分组，任务会变为未归属。', moveToProject: '移动到项目',
@@ -75,7 +78,8 @@ function labels(locale: string): SidebarLabels {
   return {
     settings: 'Open Settings', ready: 'Ready', projects: 'Projects',
     unassigned: 'Unassigned', archived: 'Archived', workspaceTrust: 'Trust this workspace to read Codex tasks',
-    unavailable: 'Codex CLI unavailable', newProject: 'New project', projectName: 'Project name',
+    unavailable: 'Codex CLI unavailable', loadFailed: 'Task list failed to load',
+    partialInventory: 'Some tasks were not loaded', newProject: 'New project', projectName: 'Project name',
     newThread: 'New task', threadName: 'Task name', threadCreated: 'Task created',
     renameProject: 'Rename project', deleteProject: 'Delete project',
     deleteProjectConfirm: 'Only the project grouping will be deleted. Tasks will become unassigned.',
@@ -561,11 +565,20 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
     const children = projectItems.length > 0 ? projectItems : [new SidebarItem(copy.noResults, {
       id: 'threadbox:no-results', kind: 'status', icon: 'search-stop', tooltip: copy.noResults
     })]
-    return [...this.environmentItems(result.environment, copy), new SidebarItem(copy.projects, {
+    const inventoryItems = result.inventory.state === 'partial'
+      ? [new SidebarItem(copy.partialInventory, {
+          id: 'threadbox:partial-inventory',
+          kind: 'status',
+          icon: 'warning',
+          tooltip: result.inventory.message ?? copy.partialInventory
+        })]
+      : []
+    return [...this.environmentItems(result.environment, copy), ...inventoryItems,
+      new SidebarItem(copy.projects, {
       id: 'threadbox:projects', kind: 'section', description: String(this.snapshot.projects.length),
       icon: 'project', children,
       contextValue: 'threadbox.projects'
-    })]
+      })]
   }
 
   private async loadRootItems(): Promise<SidebarItem[]> {
@@ -601,7 +614,7 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       this.summaryChanged.fire({ taskCount: 0, tooltip: message })
-      return [...this.environmentItems(status, copy), new SidebarItem(copy.unavailable, {
+      return [...this.environmentItems(status, copy), new SidebarItem(copy.loadFailed, {
         id: 'threadbox:load-error', kind: 'status', description: message, icon: 'error', tooltip: message
       })]
     }

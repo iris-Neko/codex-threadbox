@@ -2,7 +2,7 @@
   "name": "codex-threadbox-vscode",
   "displayName": "Codex Threadbox",
   "description": "Manage Codex tasks locally, including on Remote SSH, Dev Containers, and Codespaces.",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "publisher": "irisNeko",
   "license": "MIT",
   "private": true,

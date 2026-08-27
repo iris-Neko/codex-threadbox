@@ -29,6 +29,7 @@ import type {
   BatchOperationResult,
   DesktopRecentsStatus,
   EnvironmentStatus,
+  ListThreadsResult,
   PlatformCapabilities,
   ProjectRecord,
   ProjectSnapshot,
@@ -62,7 +63,7 @@ const INITIAL_ENVIRONMENT: EnvironmentStatus = {
   state: 'error',
   cliPath: null,
   cliVersion: null,
-  minimumVersion: '0.149.0',
+  minimumVersion: '0.150.0',
   message: null,
   externalCodexProcesses: 0,
   capabilities: { pinning: false }
@@ -123,6 +124,10 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
     staleEntries: [],
     message: null
   })
+  const [inventory, setInventory] = useState<ListThreadsResult['inventory']>({
+    state: 'complete',
+    message: null
+  })
   const [filters, setFilters] = useState<ThreadFilters>(DEFAULT_FILTERS)
   const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set())
   const [collapsedThreads, setCollapsedThreads] = useState<Set<string>>(new Set())
@@ -148,10 +153,13 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
       setThreads(result.threads)
       setProjects(projectSnapshot)
       setEnvironment(result.environment)
+      setInventory(result.inventory)
       setDesktopRecents(result.desktopRecents)
-      const selectable = new Set(result.threads
-        .filter((thread) => platform.projectManagement || thread.status !== 'active')
-        .map((thread) => thread.id))
+      const selectable = new Set(result.inventory.state === 'complete'
+        ? result.threads
+            .filter((thread) => platform.projectManagement || thread.status !== 'active')
+            .map((thread) => thread.id)
+        : [])
       setSelected(
         (current) =>
           resolveThreadSelection(
@@ -660,6 +668,13 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
             </div>
           )}
 
+          {inventory.state === 'partial' && (
+            <div className="process-warning" title={inventory.message ?? undefined}>
+              <AlertTriangle size={15} aria-hidden="true" />
+              <span>{t('partialInventory')}</span>
+            </div>
+          )}
+
           {platform.desktopRecentsRepair && desktopRecents.state === 'stale' && (
             <div className="process-warning process-warning--recents">
               <DatabaseZap size={15} aria-hidden="true" />
@@ -848,6 +863,7 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
             allowProjectThreadCreation={Boolean(platform.projectThreadCreation)}
             taskTrash={Boolean(platform.taskTrash)}
             trashedThreadIds={trashedThreadIds}
+            threadMutationDisabled={inventory.state === 'partial'}
             projectMutationDisabled={busy}
             onToggle={toggleThread}
             onToggleVisible={toggleVisible}

@@ -98,7 +98,7 @@ try {
   ].join(delimiter)
 
   await runPackagedSmoke('real-path-cli', realCliEnvironment, (window) =>
-    window.getByText('Codex 0.149.0', { exact: true }).waitFor({ timeout: 20_000 })
+    window.getByText('Codex 0.150.1', { exact: true }).waitFor({ timeout: 20_000 })
   )
 } finally {
   await rm(codexHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })

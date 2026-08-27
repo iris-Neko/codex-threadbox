@@ -37,6 +37,10 @@ export interface EnvironmentStatus {
 export interface ListThreadsResult {
   threads: ThreadRecord[]
   environment: EnvironmentStatus
+  inventory: {
+    state: 'complete' | 'partial'
+    message: string | null
+  }
   desktopRecents: DesktopRecentsStatus
   refreshedAt: number
 }

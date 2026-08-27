@@ -8,6 +8,6 @@ Threadbox projects are stored in the extension host's VS Code global storage and
 
 The built-in **Trash** project works for every task. Moving a task to Trash archives it and remembers its previous Threadbox project; restoring it returns there when that project still exists, or leaves it without a Threadbox assignment otherwise. **Empty Trash** permanently deletes eligible task records through App Server. Running and pinned tasks remain protected, and working directories are always preserved. An existing host-local project named `trash` is upgraded in place so its assignments are not lost.
 
-Codex CLI 0.149.0 or newer is required. Configure `threadbox.codexBinary` or `threadbox.codexHome` when the remote CLI does not use the default environment.
+Codex CLI 0.150.0 or newer is required. This release is validated against stable versions 0.150.0 and 0.150.1. Configure `threadbox.codexBinary` or `threadbox.codexHome` when the remote CLI does not use the default environment.
 
 This is an independent community project and is not affiliated with or endorsed by OpenAI.

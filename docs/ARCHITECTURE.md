@@ -57,6 +57,6 @@ Repair is explicit. It first creates an SQLite online backup under `~/.codex/bac
 
 ## Compatibility and local data
 
-Codex CLI `0.149.0` is the v0.3 minimum baseline. Generated TypeScript protocol files are committed under `src/shared/protocol/generated`; capabilities added after the baseline are gated at runtime.
+Codex CLI `0.150.0` is the minimum supported runtime. Release validation covers the two latest stable versions, `0.150.0` and `0.150.1`; `0.149.x` and older are rejected. Generated TypeScript protocol files are committed under `src/shared/protocol/generated` from Codex CLI `0.150.1`; newer unknown response fields remain parseable and optional capabilities are gated at runtime.
 
 Threadbox has no telemetry and persists no task or conversation copy. Desktop stores interface language and optional CLI path. VS Code uses machine-scoped settings plus its host-local project names and task-ID assignments. The CLI stores no Threadbox settings.

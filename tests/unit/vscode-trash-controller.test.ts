@@ -43,9 +43,10 @@ class FakeThreadService {
     return {
       threads: this.threads.map((thread) => ({ ...thread })),
       environment: {
-        state: 'ready', cliPath: '/codex', cliVersion: '0.149.0', minimumVersion: '0.149.0',
+        state: 'ready', cliPath: '/codex', cliVersion: '0.150.1', minimumVersion: '0.150.0',
         message: null, externalCodexProcesses: 0, capabilities: { pinning: true }
       },
+      inventory: { state: 'complete', message: null },
       desktopRecents: { state: 'unavailable', staleCount: 0, staleEntries: [], message: null },
       refreshedAt: Date.now()
     }

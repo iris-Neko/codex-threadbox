@@ -41,7 +41,7 @@ export async function run(): Promise<void> {
     assert(!capabilities.desktopRecentsRepair, 'VS Code must not expose Recents repair.')
 
     const status = await api.getEnvironmentStatus()
-    assert(status.state === 'ready' && status.cliVersion === '0.149.0', 'Fake Codex was not ready.')
+    assert(status.state === 'ready' && status.cliVersion === '0.150.1', 'Fake Codex was not ready.')
     const listed = await api.listThreads()
     assert(listed.threads.length === 4, 'VS Code did not load active and archived fake tasks.')
     assert(api.importCurrentWorkspaceProject, 'VS Code did not expose workspace project import.')
@@ -118,7 +118,13 @@ export async function run(): Promise<void> {
     const fakeLog = process.env.THREADBOX_FAKE_LOG
     assert(fakeLog, 'THREADBOX_FAKE_LOG was not provided.')
     const appServerMessages = (await readFile(fakeLog, 'utf8')).trim().split(/\r?\n/)
-      .map((line) => JSON.parse(line) as { method?: string })
+      .map((line) => JSON.parse(line) as {
+        method?: string
+        params?: { useStateDbOnly?: boolean }
+      })
+    assert(appServerMessages.some((message) =>
+      message.method === 'thread/list' && message.params?.useStateDbOnly === true
+    ), 'VS Code did not use the responsive state-database task listing mode.')
     assert(!appServerMessages.some((message) => message.method?.startsWith('project/')),
       'VS Code sent an unsupported project/* request to App Server.')
   } finally {

@@ -33,6 +33,7 @@ interface ThreadTableProps {
   allowProjectThreadCreation: boolean
   taskTrash: boolean
   trashedThreadIds: Set<string>
+  threadMutationDisabled: boolean
   projectMutationDisabled: boolean
   onToggle(id: string): void
   onToggleVisible(): void
@@ -96,6 +97,7 @@ export function ThreadTable({
   allowProjectThreadCreation,
   taskTrash,
   trashedThreadIds,
+  threadMutationDisabled,
   projectMutationDisabled,
   onToggle,
   onToggleVisible,
@@ -122,8 +124,10 @@ export function ThreadTable({
   const renderRow = ({ thread, depth, hasChildren, expanded, matchesFilter }: ThreadTreeRow) => {
     const automaticallyIncluded = implicitlySelected.has(thread.id)
     const inTrash = taskTrash && trashedThreadIds.has(thread.id)
-    const disabled = (!allowActiveSelection && thread.status === 'active') || !matchesFilter
-    const mutationDisabled = thread.status === 'active' || !matchesFilter || automaticallyIncluded
+    const disabled = threadMutationDisabled ||
+      (!allowActiveSelection && thread.status === 'active') || !matchesFilter
+    const mutationDisabled = threadMutationDisabled ||
+      thread.status === 'active' || !matchesFilter || automaticallyIncluded
     const rowClassName = [
       selected.has(thread.id) ? 'is-selected' : null,
       automaticallyIncluded ? 'thread-row--auto-selected' : null,
@@ -260,7 +264,7 @@ export function ThreadTable({
                         : t('deleteHint')
               }
               aria-label={inTrash ? t('restoreFromTrash') : taskTrash ? t('moveToTrash') : t('delete')}
-              disabled={automaticallyIncluded || !matchesFilter ||
+              disabled={threadMutationDisabled || automaticallyIncluded || !matchesFilter ||
                 (!inTrash && (thread.status === 'active' || thread.pinned))}
               onClick={() => onDelete(thread)}
             >
@@ -414,6 +418,7 @@ export function ThreadTable({
                 ref={selectAllRef}
                 type="checkbox"
                 checked={allSelectableSelected}
+                disabled={threadMutationDisabled}
                 onChange={onToggleVisible}
                 aria-label={t('selectVisible')}
               />

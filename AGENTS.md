@@ -10,7 +10,7 @@ release workflow unless the request explicitly requires it.
 | --- | --- | --- | --- |
 | Desktop | `0.3.0` | `src/`, Electron configuration, desktop packaging | `v<version>` |
 | CLI | `0.3.1` | `packages/cli/` | `cli-v<version>` |
-| VS Code | `0.7.1` | `packages/vscode/` | `vscode-v<version>` |
+| VS Code | `0.7.2` | `packages/vscode/` | `vscode-v<version>` |
 
 The desktop version comes from the root `package.json`. The CLI and VS Code
 versions come only from their own package manifests. Do not synchronize these
@@ -78,7 +78,7 @@ to shared packages.
 - Tests must use the fake stdio server or an isolated temporary `CODEX_HOME`.
   Never list, archive, pin, or delete the developer's real tasks from tests.
 - Unknown fields from newer App Server versions must remain parseable. The
-  minimum supported Codex CLI version is `0.149.0` until deliberately changed.
+  minimum supported Codex CLI version is `0.150.0` until deliberately changed.
 
 ## Working rules
 

@@ -123,6 +123,8 @@ const resources = {
       noThreadsTitle: 'Nothing here',
       externalProcesses:
         '{{count}} other Codex processes detected. Running status may be incomplete; stop active turns before changing tasks.',
+      partialInventory:
+        'Some tasks could not be loaded. The available tasks are shown; task changes are disabled until a complete refresh succeeds.',
       recentsStale: 'Codex desktop Recents contains {{count}} stale entries with no task record.',
       recentsRepair: 'Repair Recents...',
       recentsRepairTitle: 'Repair Codex desktop Recents',
@@ -296,6 +298,8 @@ const resources = {
       noThreadsTitle: '这里是空的',
       externalProcesses:
         '检测到 {{count}} 个其他 Codex 进程：运行状态可能不完整，修改任务前请先停止正在运行的任务。',
+      partialInventory:
+        '部分任务未能载入。当前仍显示可用任务；完整刷新成功前，任务修改操作已禁用。',
       recentsStale: 'Codex 桌面端“最近任务”中有 {{count}} 条已经没有任务本体的残留索引。',
       recentsRepair: '修复最近任务…',
       recentsRepairTitle: '修复 Codex 桌面端“最近任务”',

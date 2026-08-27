@@ -17,8 +17,8 @@ function runtime(): CodexRuntimeLike {
       status: {
         state: 'ready',
         cliPath: process.execPath,
-        cliVersion: '0.149.0',
-        minimumVersion: '0.149.0',
+        cliVersion: '0.150.1',
+        minimumVersion: '0.150.0',
         message: null,
         externalCodexProcesses: 0,
         capabilities: { pinning: false }
@@ -56,11 +56,24 @@ describe('AppServerClient', () => {
     })
   })
 
-  it('times out unanswered requests', async () => {
-    const client = new AppServerClient(runtime(), descriptor)
+  it('stops a timed-out server and starts a fresh one for the next request', async () => {
+    const baseRuntime = runtime()
+    let spawnCount = 0
+    const client = new AppServerClient({
+      ...baseRuntime,
+      spawnAppServer: (command) => {
+        spawnCount += 1
+        return baseRuntime.spawnAppServer(command)
+      }
+    }, descriptor)
     clients.push(client)
 
     await expect(client.request('test/timeout', {}, 30)).rejects.toThrow('test/timeout timed out')
+    await expect(client.request('test/echo', { recovered: true })).resolves.toMatchObject({
+      initialized: true,
+      value: { recovered: true }
+    })
+    expect(spawnCount).toBe(2)
   })
 
   it('rejects a pending request when the server exits and can start again', async () => {

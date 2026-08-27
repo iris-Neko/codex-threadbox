@@ -38,6 +38,25 @@ interface InventoryEntry {
   archived: boolean
 }
 
+export interface ThreadListOptions {
+  allowPartial?: boolean
+  refreshEnvironment?: boolean
+  requestTimeoutMs?: number
+  useStateDbOnly?: boolean
+}
+
+interface ResolvedThreadListOptions {
+  allowPartial: boolean
+  refreshEnvironment: boolean
+  requestTimeoutMs: number
+  useStateDbOnly: boolean
+}
+
+interface FetchResult {
+  threads: Thread[]
+  warning: string | null
+}
+
 export interface SupplementalThreadReference {
   id: string
   archived: boolean
@@ -98,6 +117,15 @@ function isMissingThreadError(error: unknown): boolean {
   return /thread (?:not loaded|not found)/iu.test(errorMessage(error))
 }
 
+function resolvedListOptions(options: ThreadListOptions): ResolvedThreadListOptions {
+  return {
+    allowPartial: options.allowPartial ?? false,
+    refreshEnvironment: options.refreshEnvironment ?? true,
+    requestTimeoutMs: options.requestTimeoutMs ?? 60_000,
+    useStateDbOnly: options.useStateDbOnly ?? false
+  }
+}
+
 export class ThreadService {
   private lastKnownDirectories = new Set<string>()
   private lastKnownThreadIds = new Set<string>()
@@ -118,8 +146,10 @@ export class ThreadService {
     )
   }
 
-  async listThreads(): Promise<ListThreadsResult> {
-    const { entries, pinnedIds, environment } = await this.inventory()
+  async listThreads(options: ThreadListOptions = {}): Promise<ListThreadsResult> {
+    const { entries, pinnedIds, environment, warnings } = await this.inventory(
+      resolvedListOptions(options)
+    )
     const children = this.buildChildren(entries)
     const records = entries.map(({ thread, archived }): ThreadRecord => {
       const status = safeStatus(thread)
@@ -149,7 +179,18 @@ export class ThreadService {
     const desktopRecents = this.desktopRecentsRepair
       ? await this.desktopRecentsRepair.inspect(new Set(records.map((record) => record.id)))
       : { state: 'unavailable' as const, staleCount: 0, staleEntries: [], message: null }
-    return { threads: records, environment, desktopRecents, refreshedAt: Date.now() }
+    return {
+      threads: records,
+      environment,
+      inventory: {
+        state: warnings.length > 0 ? 'partial' : 'complete',
+        message: warnings.length > 0
+          ? `Some Codex tasks could not be loaded. ${warnings.join(' ')}`
+          : null
+      },
+      desktopRecents,
+      refreshedAt: Date.now()
+    }
   }
 
   async repairDesktopRecents(): Promise<DesktopRecentsRepairResult> {
@@ -261,27 +302,34 @@ export class ThreadService {
     return this.lastKnownThreadIds.has(id)
   }
 
-  private async inventory(): Promise<{
+  private async inventory(
+    options: ResolvedThreadListOptions = resolvedListOptions({})
+  ): Promise<{
     entries: InventoryEntry[]
     pinnedIds: Set<string>
     environment: ListThreadsResult['environment']
+    warnings: string[]
   }> {
     const probe = await this.client.getProbe()
     if (probe.status.state !== 'ready') throw new Error(probe.status.message ?? 'Codex CLI is not ready.')
 
-    const active = await this.fetchAll(false)
-    const archived = await this.fetchAll(true)
+    const warnings: string[] = []
+    const active = await this.fetchAll(false, undefined, options)
+    const archived = await this.fetchAll(true, undefined, options)
+    if (active.warning) warnings.push(active.warning)
+    if (archived.warning) warnings.push(archived.warning)
     const merged = new Map<string, InventoryEntry>()
-    for (const thread of active) merged.set(thread.id, { thread, archived: false })
-    for (const thread of archived) merged.set(thread.id, { thread, archived: true })
+    for (const thread of active.threads) merged.set(thread.id, { thread, archived: false })
+    for (const thread of archived.threads) merged.set(thread.id, { thread, archived: true })
 
     for (const [threadId, isArchived] of this.supplementalThreads) {
       if (merged.has(threadId)) continue
       try {
-        const response = await this.client.request<ThreadReadResponse>('thread/read', {
-          threadId,
-          includeTurns: false
-        })
+        const response = await this.client.request<ThreadReadResponse>(
+          'thread/read',
+          { threadId, includeTurns: false },
+          options.requestTimeoutMs
+        )
         if (response.thread.id !== threadId) {
           throw new Error(`thread/read returned a different task ID for ${threadId}.`)
         }
@@ -289,23 +337,36 @@ export class ThreadService {
           merged.set(threadId, { thread: response.thread, archived: isArchived })
         }
       } catch (error) {
-        if (!isMissingThreadError(error)) throw error
+        if (isMissingThreadError(error)) continue
+        if (!options.allowPartial) throw error
+        warnings.push(`A locally assigned task could not be loaded: ${errorMessage(error)}`)
+        break
       }
     }
 
     const pinnedIds = new Set<string>()
     if (probe.status.capabilities.pinning) {
-      for (const thread of await this.fetchAll(false, true)) pinnedIds.add(thread.id)
-      for (const thread of await this.fetchAll(true, true)) pinnedIds.add(thread.id)
+      const activePinned = await this.fetchAll(false, true, options)
+      const archivedPinned = await this.fetchAll(true, true, options)
+      for (const thread of activePinned.threads) pinnedIds.add(thread.id)
+      for (const thread of archivedPinned.threads) pinnedIds.add(thread.id)
+      if (activePinned.warning) warnings.push(activePinned.warning)
+      if (archivedPinned.warning) warnings.push(archivedPinned.warning)
     }
 
-    probe.status.externalCodexProcesses = await this.client
-      .getProbe(true)
-      .then((latest) => latest.status.externalCodexProcesses)
-    return { entries: [...merged.values()], pinnedIds, environment: probe.status }
+    if (options.refreshEnvironment) {
+      probe.status.externalCodexProcesses = await this.client
+        .getProbe(true)
+        .then((latest) => latest.status.externalCodexProcesses)
+    }
+    return { entries: [...merged.values()], pinnedIds, environment: probe.status, warnings }
   }
 
-  private async fetchAll(archived: boolean, isPinned?: boolean): Promise<Thread[]> {
+  private async fetchAll(
+    archived: boolean,
+    isPinned: boolean | undefined,
+    options: ResolvedThreadListOptions
+  ): Promise<FetchResult> {
     const output: Thread[] = []
     let cursor: string | null = null
     do {
@@ -316,15 +377,28 @@ export class ThreadService {
         sortDirection: 'desc',
         sourceKinds: SOURCE_KINDS,
         archived,
-        useStateDbOnly: false
+        useStateDbOnly: options.useStateDbOnly
       }
       if (isPinned !== undefined) params.isPinned = isPinned
 
-      const page = await this.client.request<ThreadListResponse>('thread/list', params, 60_000)
-      output.push(...page.data)
-      cursor = page.nextCursor
+      try {
+        const page = await this.client.request<ThreadListResponse>(
+          'thread/list',
+          params,
+          options.requestTimeoutMs
+        )
+        output.push(...page.data)
+        cursor = page.nextCursor
+      } catch (error) {
+        if (!options.allowPartial) throw error
+        const scope = `${archived ? 'archived' : 'active'}${isPinned ? ' pinned' : ''}`
+        return {
+          threads: output,
+          warning: `The ${scope} task list stopped early: ${errorMessage(error)}`
+        }
+      }
     } while (cursor)
-    return output
+    return { threads: output, warning: null }
   }
 
   private async runStateBatch(

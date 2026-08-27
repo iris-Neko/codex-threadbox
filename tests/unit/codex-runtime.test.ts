@@ -33,7 +33,7 @@ async function writeFakeCli(directory: string, valid: boolean): Promise<string> 
     await writeFile(
       command,
       valid
-        ? '@echo off\r\necho codex-cli 0.149.0\r\n'
+        ? '@echo off\r\necho codex-cli 0.150.1\r\n'
         : '@echo off\r\necho broken 1>&2\r\nexit /b 1\r\n',
       'utf8'
     )
@@ -43,7 +43,7 @@ async function writeFakeCli(directory: string, valid: boolean): Promise<string> 
   const command = join(directory, 'codex')
   await writeFile(
     command,
-    valid ? '#!/bin/sh\nprintf "codex-cli 0.149.0\\n"\n' : '#!/bin/sh\nexit 1\n',
+    valid ? '#!/bin/sh\nprintf "codex-cli 0.150.1\\n"\n' : '#!/bin/sh\nexit 1\n',
     'utf8'
   )
   await chmod(command, 0o755)
@@ -64,7 +64,7 @@ afterEach(async () => {
 
 describe('CodexRuntime', () => {
   it('parses stable and prerelease Codex version output', () => {
-    expect(parseCodexVersion('codex-cli 0.149.0')).toBe('0.149.0')
+    expect(parseCodexVersion('codex-cli 0.150.0')).toBe('0.150.0')
     expect(parseCodexVersion('codex-cli v0.150.0-alpha.1+build.2')).toBe(
       '0.150.0-alpha.1+build.2'
     )
@@ -90,7 +90,36 @@ describe('CodexRuntime', () => {
     const probe = await runtime.probe(true)
 
     expect(probe.command).toBe(validCommand)
-    expect(probe.status).toMatchObject({ state: 'ready', cliVersion: '0.149.0' })
+    expect(probe.status).toMatchObject({ state: 'ready', cliVersion: '0.150.1' })
+  })
+
+  it.each([
+    ['0.150.0', 'ready'],
+    ['0.150.1', 'ready'],
+    ['0.149.1', 'outdated']
+  ] as const)('classifies Codex CLI %s as %s', async (version, state) => {
+    const root = await temporaryDirectory('threadbox-runtime-version-')
+    const command = process.platform === 'win32' ? join(root, 'codex.cmd') : join(root, 'codex')
+    await writeFile(
+      command,
+      process.platform === 'win32'
+        ? `@echo off\r\necho codex-cli ${version}\r\n`
+        : `#!/bin/sh\nprintf "codex-cli ${version}\\n"\n`,
+      'utf8'
+    )
+    if (process.platform !== 'win32') await chmod(command, 0o755)
+
+    process.env.CODEX_BINARY = command
+    process.env.THREADBOX_TEST_DISABLE_PROCESS_SCAN = '1'
+    const probe = await new CodexRuntime({
+      load: async () => ({ locale: 'en', customCliPath: null })
+    }).probe(true)
+
+    expect(probe.status).toMatchObject({
+      state,
+      cliVersion: version,
+      minimumVersion: '0.150.0'
+    })
   })
 
   it.runIf(process.platform === 'win32')(

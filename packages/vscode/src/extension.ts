@@ -1,7 +1,12 @@
 import { randomBytes } from 'node:crypto'
 import { basename, join, resolve } from 'node:path'
 import * as vscode from 'vscode'
-import { AppServerClient, CodexRuntime, ThreadService } from '../../core/src/index'
+import {
+  AppServerClient,
+  CodexRuntime,
+  ThreadService,
+  type ThreadListOptions
+} from '../../core/src/index'
 import type {
   AppLocale,
   AppSettings,
@@ -35,6 +40,12 @@ const SIDEBAR_VIEW = 'threadbox.sidebar'
 const CODEX_PRIMARY_SIDEBAR_VIEW = 'threadbox.sidebar.codexPrimary'
 const CODEX_SECONDARY_SIDEBAR_VIEW = 'threadbox.sidebar.codexSecondary'
 const CODEX_EXTENSION_ID = 'openai.chatgpt'
+const RESPONSIVE_LIST_OPTIONS: ThreadListOptions = {
+  allowPartial: true,
+  refreshEnvironment: false,
+  requestTimeoutMs: 5_000,
+  useStateDbOnly: true
+}
 const SIDEBAR_COMMANDS = {
   newProject: 'threadbox.newProject',
   importWorkspace: 'threadbox.importCurrentWorkspaceProject',
@@ -196,8 +207,11 @@ function createApi(runtime: RuntimeHost, projects: ProjectStore): ThreadboxApi {
     },
     listThreads: async () => {
       requireWorkspaceTrust(vscode.workspace.isTrusted)
-      const result = await (await serviceWithProjectThreads(runtime, projects)).listThreads()
-      await projects.setInventory(result.threads)
+      const result = await (await serviceWithProjectThreads(runtime, projects))
+        .listThreads(RESPONSIVE_LIST_OPTIONS)
+      await projects.setInventory(result.threads, {
+        persistPruning: result.inventory.state === 'complete'
+      })
       return result
     },
     deleteThreads: async (ids) => {
@@ -426,7 +440,7 @@ export interface ThreadboxExtensionApi {
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<ThreadboxExtensionApi> {
-  const version = String(context.extension.packageJSON.version ?? '0.7.1')
+  const version = String(context.extension.packageJSON.version ?? '0.7.2')
   const runtime = new RuntimeHost(version)
   await migrateLegacyProjectStorage(context.globalStorageUri.fsPath)
   const projects = new ProjectStore(join(context.globalStorageUri.fsPath, 'projects-v1.json'))
