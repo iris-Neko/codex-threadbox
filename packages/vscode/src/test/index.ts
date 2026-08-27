@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as vscode from 'vscode'
@@ -12,8 +12,11 @@ export async function run(): Promise<void> {
   const fakeCli = process.env.THREADBOX_TEST_FAKE_CLI
   assert(fakeCli, 'THREADBOX_TEST_FAKE_CLI was not provided.')
   const codexHome = await mkdtemp(join(tmpdir(), 'threadbox-vscode-home-'))
+  const fakeVersionFile = join(codexHome, 'fake-version.txt')
   const configuration = vscode.workspace.getConfiguration('threadbox')
   try {
+    await writeFile(fakeVersionFile, '0.149.1\n', 'utf8')
+    process.env.THREADBOX_FAKE_VERSION_FILE = fakeVersionFile
     await configuration.update('codexBinary', fakeCli, vscode.ConfigurationTarget.Global)
     await configuration.update('codexHome', codexHome, vscode.ConfigurationTarget.Global)
     await configuration.update('language', 'en', vscode.ConfigurationTarget.Global)
@@ -37,11 +40,17 @@ export async function run(): Promise<void> {
     assert(capabilities.projectThreadCreation, 'VS Code project task creation was not enabled.')
     assert(capabilities.workspaceProjectImport, 'VS Code workspace project import was not enabled.')
     assert(capabilities.taskTrash, 'VS Code task Trash was not enabled.')
+    assert(capabilities.codexCliUpdate, 'VS Code Codex CLI update was not enabled.')
     assert(!capabilities.directoryTrash, 'VS Code must not expose directory deletion.')
     assert(!capabilities.desktopRecentsRepair, 'VS Code must not expose Recents repair.')
 
     const status = await api.getEnvironmentStatus()
-    assert(status.state === 'ready' && status.cliVersion === '0.150.1', 'Fake Codex was not ready.')
+    assert(status.state === 'outdated' && status.cliVersion === '0.149.1',
+      'Fake Codex did not start below the minimum version.')
+    assert(api.updateCodexCli, 'VS Code did not expose Codex CLI update.')
+    const updatedStatus = await api.updateCodexCli()
+    assert(updatedStatus.state === 'ready' && updatedStatus.cliVersion === '0.150.1',
+      'VS Code did not update and re-probe the fake Codex CLI.')
     const listed = await api.listThreads()
     assert(listed.threads.length === 4, 'VS Code did not load active and archived fake tasks.')
     assert(api.importCurrentWorkspaceProject, 'VS Code did not expose workspace project import.')
@@ -100,6 +109,7 @@ export async function run(): Promise<void> {
     assert(result.succeeded.length === 1, 'VS Code archive operation did not complete.')
     const commands = await vscode.commands.getCommands(true)
     assert(commands.includes('threadbox.refreshSidebar'), 'Threadbox sidebar refresh was not registered.')
+    assert(commands.includes('threadbox.updateCodexCli'), 'Threadbox CLI update command was not registered.')
     assert(commands.includes('threadbox.searchSidebar'), 'Threadbox sidebar search was not registered.')
     assert(commands.includes('threadbox.clearSidebarSearch'), 'Threadbox search reset was not registered.')
     assert(commands.includes('threadbox.newProject'), 'Threadbox project commands were not registered.')
@@ -119,15 +129,21 @@ export async function run(): Promise<void> {
     assert(fakeLog, 'THREADBOX_FAKE_LOG was not provided.')
     const appServerMessages = (await readFile(fakeLog, 'utf8')).trim().split(/\r?\n/)
       .map((line) => JSON.parse(line) as {
+        event?: string
+        args?: string[]
         method?: string
         params?: { useStateDbOnly?: boolean }
       })
+    assert(appServerMessages.some((message) =>
+      message.event === 'cli-update' && JSON.stringify(message.args) === JSON.stringify(['update'])
+    ), 'VS Code did not invoke the fixed Codex self-update command.')
     assert(appServerMessages.some((message) =>
       message.method === 'thread/list' && message.params?.useStateDbOnly === true
     ), 'VS Code did not use the responsive state-database task listing mode.')
     assert(!appServerMessages.some((message) => message.method?.startsWith('project/')),
       'VS Code sent an unsupported project/* request to App Server.')
   } finally {
+    delete process.env.THREADBOX_FAKE_VERSION_FILE
     await configuration.update('codexBinary', undefined, vscode.ConfigurationTarget.Global)
     await configuration.update('codexHome', undefined, vscode.ConfigurationTarget.Global)
     await configuration.update('language', undefined, vscode.ConfigurationTarget.Global)

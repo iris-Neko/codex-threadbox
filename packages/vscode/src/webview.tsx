@@ -42,7 +42,7 @@ function invoke<T>(method: RpcMethod, ...args: unknown[]): Promise<T> {
     const timer = window.setTimeout(() => {
       pending.delete(id)
       reject(new Error(`Threadbox request timed out: ${method}`))
-    }, 120_000)
+    }, method === 'updateCodexCli' ? 330_000 : 120_000)
     pending.set(id, { resolve: (value) => resolve(value as T), reject, timer })
     vscode.postMessage({ kind: 'threadbox.request', id, method, args })
   })
@@ -51,6 +51,7 @@ function invoke<T>(method: RpcMethod, ...args: unknown[]): Promise<T> {
 const api: ThreadboxApi = {
   getPlatformCapabilities: () => invoke('getPlatformCapabilities'),
   getEnvironmentStatus: () => invoke('getEnvironmentStatus'),
+  updateCodexCli: () => invoke('updateCodexCli'),
   listThreads: () => invoke('listThreads'),
   deleteThreads: (ids: string[], options: DeleteThreadsOptions) =>
     invoke('deleteThreads', ids, options),

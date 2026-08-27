@@ -3,6 +3,7 @@ import {
   Archive,
   ArchiveRestore,
   DatabaseZap,
+  Download,
   FolderDown,
   FolderInput,
   FolderKanban,
@@ -196,6 +197,25 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
     const timer = window.setTimeout(() => setNotice(null), 5_000)
     return () => window.clearTimeout(timer)
   }, [notice])
+
+  const updateCodexCli = async (): Promise<void> => {
+    if (!api.updateCodexCli) return
+    setBusy(true)
+    setError(null)
+    try {
+      const status = await api.updateCodexCli()
+      setEnvironment(status)
+      if (status.state !== 'ready') {
+        throw new Error(status.message ?? t('cliUpdateFailed'))
+      }
+      await refresh()
+      setNotice(t('cliUpdateSucceeded', { version: status.cliVersion ?? status.minimumVersion }))
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t('cliUpdateFailed'))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const groupMode = viewMode === 'directories' ? 'directories' : 'projects'
   const projectContext = platform.projectManagement ? projects : null
@@ -827,14 +847,37 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
         ) : !ready ? (
           <div className="center-state center-state--error">
             <AlertTriangle size={28} aria-hidden="true" />
-            <h2>{t('cliMissingTitle')}</h2>
+            <h2>{t(environment.state === 'outdated' ? 'cliOutdatedTitle' : 'cliMissingTitle')}</h2>
             <p>{environment.message ?? t('cliMissingBody', { minimum: environment.minimumVersion })}</p>
             <div className="center-state__actions">
-              <button className="button button--primary" type="button" onClick={() => void refresh()}>
+              {environment.state === 'outdated' && platform.codexCliUpdate && api.updateCodexCli && (
+                <button
+                  className="button button--primary"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void updateCodexCli()}
+                >
+                  {busy
+                    ? <LoaderCircle size={16} className="spin" aria-hidden="true" />
+                    : <Download size={16} aria-hidden="true" />}
+                  {t(busy ? 'updatingCodexCli' : 'updateCodexCli')}
+                </button>
+              )}
+              <button
+                className="button button--primary"
+                type="button"
+                disabled={busy}
+                onClick={() => void refresh()}
+              >
                 <RefreshCw size={16} aria-hidden="true" />
                 {t('retry')}
               </button>
-              <button className="button button--secondary" type="button" onClick={() => setSettingsOpen(true)}>
+              <button
+                className="button button--secondary"
+                type="button"
+                disabled={busy}
+                onClick={() => setSettingsOpen(true)}
+              >
                 <SettingsIcon size={16} aria-hidden="true" />
                 {t('settings')}
               </button>

@@ -1,9 +1,41 @@
 const readline = require('node:readline')
-const { appendFileSync } = require('node:fs')
+const { appendFileSync, readFileSync, writeFileSync } = require('node:fs')
+
+function fakeVersion() {
+  if (process.env.THREADBOX_FAKE_VERSION_FILE) {
+    return readFileSync(process.env.THREADBOX_FAKE_VERSION_FILE, 'utf8').trim()
+  }
+  return process.env.THREADBOX_FAKE_VERSION || '0.150.1'
+}
 
 if (process.argv.includes('--version')) {
-  process.stdout.write('codex-cli 0.150.1\n')
+  process.stdout.write(`codex-cli ${fakeVersion()}\n`)
   process.exit(0)
+}
+
+if (process.argv.includes('update')) {
+  if (process.env.THREADBOX_FAKE_LOG) {
+    appendFileSync(process.env.THREADBOX_FAKE_LOG, `${JSON.stringify({
+      event: 'cli-update',
+      args: process.argv.slice(2)
+    })}\n`)
+  }
+  const finishUpdate = () => {
+    if (process.env.THREADBOX_FAKE_UPDATE_FAIL === '1') {
+      process.stderr.write('fake Codex update failed\n')
+      process.exit(9)
+    }
+    if (process.env.THREADBOX_FAKE_VERSION_FILE) {
+      writeFileSync(process.env.THREADBOX_FAKE_VERSION_FILE, '0.150.1\n', 'utf8')
+    }
+    process.stdout.write('fake Codex update completed\n')
+    process.exit(0)
+  }
+  const delay = Number(process.env.THREADBOX_FAKE_UPDATE_DELAY_MS ?? 0)
+  if (Number.isFinite(delay) && delay > 0) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delay)
+  }
+  finishUpdate()
 }
 
 if (!process.argv.includes('app-server')) {

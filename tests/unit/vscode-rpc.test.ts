@@ -38,6 +38,9 @@ describe('VS Code Webview RPC validation', () => {
     expect(parseRpcRequest({
       kind: 'threadbox.request', id: 'request-empty', method: 'emptyTrash', args: []
     })).toMatchObject({ method: 'emptyTrash' })
+    expect(parseRpcRequest({
+      kind: 'threadbox.request', id: 'request-update', method: 'updateCodexCli', args: []
+    })).toMatchObject({ method: 'updateCodexCli' })
   })
 
   it('rejects unknown methods and host-only directory deletion', () => {
@@ -90,6 +93,9 @@ describe('VS Code Webview RPC validation', () => {
     })).toBeNull()
     expect(parseRpcRequest({
       kind: 'threadbox.request', id: '11', method: 'emptyTrash', args: ['unexpected']
+    })).toBeNull()
+    expect(parseRpcRequest({
+      kind: 'threadbox.request', id: '11b', method: 'updateCodexCli', args: ['codex', 'update']
     })).toBeNull()
     expect(parseRpcRequest({
       kind: 'threadbox.request', id: '12', method: 'restoreThreadsFromTrash', args: [[]]

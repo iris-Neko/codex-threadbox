@@ -11,6 +11,7 @@ import type {
   AppLocale,
   AppSettings,
   DesktopRecentsRepairResult,
+  EnvironmentStatus,
   PlatformCapabilities,
   ThreadboxApi
 } from '../../../src/shared/contracts'
@@ -19,6 +20,7 @@ import {
   chooseProjectDirectory,
   createProjectThread
 } from './codex-projects'
+import { CodexCliUpdater } from './codex-update'
 import { parseRpcRequest, type RpcRequest, type RpcResponse } from './rpc'
 import { ProjectStore } from './project-store'
 import { SidebarItem, ThreadboxSidebarProvider } from './sidebar'
@@ -60,6 +62,7 @@ const SIDEBAR_COMMANDS = {
   delete: 'threadbox.delete',
   restoreFromTrash: 'threadbox.restoreFromTrash',
   emptyTrash: 'threadbox.emptyTrash',
+  updateCodexCli: 'threadbox.updateCodexCli',
   copyId: 'threadbox.copyId',
   openDirectory: 'threadbox.openDirectory',
   openInCodex: 'threadbox.openInCodex',
@@ -109,6 +112,9 @@ class RuntimeHost implements vscode.Disposable {
   private runtime: CodexRuntime | null = null
   private client: AppServerClient | null = null
   private service: ThreadService | null = null
+  private environment: NodeJS.ProcessEnv | null = null
+  private readonly updater = new CodexCliUpdater()
+  private updatePromise: Promise<EnvironmentStatus> | null = null
 
   constructor(private readonly version: string) {}
 
@@ -117,6 +123,7 @@ class RuntimeHost implements vscode.Disposable {
     const environment = { ...process.env }
     const codexHome = configuredString('codexHome')
     if (codexHome) environment.CODEX_HOME = resolve(codexHome)
+    this.environment = environment
     this.runtime = new CodexRuntime({
       load: async () => ({ customCliPath: configuredString('codexBinary') })
     }, environment)
@@ -139,11 +146,49 @@ class RuntimeHost implements vscode.Disposable {
     return this.client
   }
 
+  updateCodexCli(): Promise<EnvironmentStatus> {
+    if (this.updatePromise) return this.updatePromise
+    const pending = this.performCodexCliUpdate()
+    const tracked = pending.finally(() => {
+      if (this.updatePromise === tracked) this.updatePromise = null
+    })
+    this.updatePromise = tracked
+    return tracked
+  }
+
+  private async performCodexCliUpdate(): Promise<EnvironmentStatus> {
+    const runtime = this.getRuntime()
+    const before = await runtime.probe(true)
+    if (before.status.state !== 'outdated') {
+      if (before.status.state === 'ready') {
+        throw new Error(`Codex CLI ${before.status.cliVersion ?? ''} already satisfies the minimum version.`)
+      }
+      throw new Error(before.status.message ?? 'Codex CLI is not available for self-update.')
+    }
+
+    this.client?.stop()
+    this.client = null
+    this.service = null
+    await this.updater.update(before.command, this.environment ?? process.env)
+    runtime.invalidate()
+    const after = await runtime.probe(true)
+    if (after.status.state !== 'ready') {
+      throw new Error(
+        `Codex CLI update completed, but the installed version is still not usable. ${after.status.message ?? ''}`
+          .trim()
+      )
+    }
+    return after.status
+  }
+
   reset(): void {
+    this.updater.stop()
     this.client?.stop()
     this.runtime = null
     this.client = null
     this.service = null
+    this.environment = null
+    this.updatePromise = null
   }
 
   dispose(): void {
@@ -171,7 +216,8 @@ function platformCapabilities(): PlatformCapabilities {
     currentWorkspaceDirectories,
     projectThreadCreation: true,
     taskTrash: true,
-    workspaceProjectImport: currentWorkspaceDirectories.length > 0
+    workspaceProjectImport: currentWorkspaceDirectories.length > 0,
+    codexCliUpdate: true
   }
 }
 
@@ -204,6 +250,10 @@ function createApi(runtime: RuntimeHost, projects: ProjectStore): ThreadboxApi {
     getEnvironmentStatus: async () => {
       requireWorkspaceTrust(vscode.workspace.isTrusted)
       return (await runtime.getRuntime().probe(true)).status
+    },
+    updateCodexCli: async () => {
+      requireWorkspaceTrust(vscode.workspace.isTrusted)
+      return runtime.updateCodexCli()
     },
     listThreads: async () => {
       requireWorkspaceTrust(vscode.workspace.isTrusted)
@@ -421,7 +471,7 @@ function attachRpc(
       if (['deleteThreads', 'trashThreads', 'restoreThreadsFromTrash', 'emptyTrash',
         'archiveThreads', 'unarchiveThreads', 'setPinned', 'updateSettings',
         'createProject', 'importCurrentWorkspaceProject', 'renameProject', 'deleteProject', 'assignThreads',
-        'createThreadInProject']
+        'createThreadInProject', 'updateCodexCli']
         .includes(request.method)) onMutation()
     } catch (error) {
       response = {
@@ -440,7 +490,7 @@ export interface ThreadboxExtensionApi {
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<ThreadboxExtensionApi> {
-  const version = String(context.extension.packageJSON.version ?? '0.7.2')
+  const version = String(context.extension.packageJSON.version ?? '0.8.0')
   const runtime = new RuntimeHost(version)
   await migrateLegacyProjectStorage(context.globalStorageUri.fsPath)
   const projects = new ProjectStore(join(context.globalStorageUri.fsPath, 'projects-v1.json'))
@@ -448,6 +498,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Thread
   const sidebar = new ThreadboxSidebarProvider(
     api,
     SIDEBAR_COMMANDS.openOnDoubleClick,
+    SIDEBAR_COMMANDS.updateCodexCli,
     vscode.env.language
   )
   const doubleClickGate = new DoubleClickGate()
@@ -527,6 +578,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<Thread
         sidebar.restoreThreads(selectedItems(item, selection))),
     vscode.commands.registerCommand(SIDEBAR_COMMANDS.emptyTrash,
       (item?: SidebarItem) => sidebar.emptyTrash(item)),
+    vscode.commands.registerCommand(SIDEBAR_COMMANDS.updateCodexCli,
+      () => sidebar.updateCodexCli()),
     vscode.commands.registerCommand(SIDEBAR_COMMANDS.copyId,
       (item?: SidebarItem, selection?: SidebarItem[]) =>
         sidebar.copyIds(selectedItems(item, selection))),

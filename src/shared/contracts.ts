@@ -155,6 +155,7 @@ export interface PlatformCapabilities {
   projectThreadCreation?: boolean
   taskTrash?: boolean
   workspaceProjectImport?: boolean
+  codexCliUpdate?: boolean
 }
 
 export interface CreatedProjectThread {
@@ -167,6 +168,7 @@ export interface CreatedProjectThread {
 export interface ThreadboxApi {
   getPlatformCapabilities(): Promise<PlatformCapabilities>
   getEnvironmentStatus(): Promise<EnvironmentStatus>
+  updateCodexCli?(): Promise<EnvironmentStatus>
   listThreads(): Promise<ListThreadsResult>
   deleteThreads(ids: string[], options: DeleteThreadsOptions): Promise<BatchOperationResult>
   trashThreads?(ids: string[]): Promise<BatchOperationResult>

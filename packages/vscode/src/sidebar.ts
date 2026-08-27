@@ -32,6 +32,9 @@ interface SidebarLabels {
   unavailable: string
   loadFailed: string
   partialInventory: string
+  updateCodexCli: string
+  updatingCodexCli: string
+  codexCliUpdated: string
   newProject: string
   newThread: string
   threadName: string
@@ -62,6 +65,8 @@ function labels(locale: string): SidebarLabels {
       unassigned: '未归属', archived: '已归档', workspaceTrust: '需要信任工作区才能读取 Codex 任务',
       unavailable: 'Codex CLI 不可用', loadFailed: '任务列表载入失败',
       partialInventory: '部分任务未载入', newProject: '新建项目', projectName: '项目名称',
+      updateCodexCli: '更新 Codex CLI', updatingCodexCli: '正在更新 Codex CLI…',
+      codexCliUpdated: 'Codex CLI 已更新',
       newThread: '新建对话', threadName: '对话名称', threadCreated: '已创建对话',
       renameProject: '重命名项目', deleteProject: '删除项目',
       deleteProjectConfirm: '只删除项目分组，任务会变为未归属。', moveToProject: '移动到项目',
@@ -80,6 +85,8 @@ function labels(locale: string): SidebarLabels {
     unassigned: 'Unassigned', archived: 'Archived', workspaceTrust: 'Trust this workspace to read Codex tasks',
     unavailable: 'Codex CLI unavailable', loadFailed: 'Task list failed to load',
     partialInventory: 'Some tasks were not loaded', newProject: 'New project', projectName: 'Project name',
+    updateCodexCli: 'Update Codex CLI', updatingCodexCli: 'Updating Codex CLI…',
+    codexCliUpdated: 'Codex CLI updated',
     newThread: 'New task', threadName: 'Task name', threadCreated: 'Task created',
     renameProject: 'Rename project', deleteProject: 'Delete project',
     deleteProjectConfirm: 'Only the project grouping will be deleted. Tasks will become unassigned.',
@@ -162,6 +169,7 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
   constructor(
     private readonly api: ThreadboxApi,
     private readonly openThreadCommand: string,
+    private readonly updateCodexCliCommand: string,
     private readonly locale: string
   ) {}
 
@@ -430,6 +438,24 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
     } catch (error) { await this.showError(error) }
   }
 
+  async updateCodexCli(): Promise<void> {
+    if (!this.api.updateCodexCli) return
+    const copy = labels(this.locale)
+    try {
+      const status = await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: copy.updatingCodexCli,
+        cancellable: false
+      }, () => this.api.updateCodexCli!())
+      await vscode.window.showInformationMessage(
+        `${copy.codexCliUpdated}: ${status.cliVersion ?? status.minimumVersion}`
+      )
+      this.refresh()
+    } catch (error) {
+      await this.showError(error)
+    }
+  }
+
   async copyIds(items: readonly SidebarItem[]): Promise<void> {
     const ids = this.threadIds(items)
     if (ids.length > 0) await vscode.env.clipboard.writeText(ids.join('\n'))
@@ -453,13 +479,28 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
 
   private environmentItems(status: EnvironmentStatus, copy: SidebarLabels): SidebarItem[] {
     const version = status.cliVersion ? `Codex ${status.cliVersion}` : copy.unavailable
-    return [new SidebarItem(version, {
+    const items = [new SidebarItem(version, {
       id: 'threadbox:environment',
       kind: 'status', description: status.state === 'ready' ? copy.ready : status.message ?? status.state,
       icon: status.state === 'ready' ? 'pass-filled' : 'warning',
-      command: status.state === 'ready' ? undefined : this.settingsCommand(copy.settings),
+      command: status.state === 'missing' || status.state === 'error'
+        ? this.settingsCommand(copy.settings)
+        : undefined,
       tooltip: status.message ?? version
     })]
+    if (status.state === 'outdated' && this.api.updateCodexCli) {
+      items.push(new SidebarItem(copy.updateCodexCli, {
+        id: 'threadbox:update-codex-cli',
+        kind: 'action',
+        icon: 'cloud-download',
+        command: {
+          command: this.updateCodexCliCommand,
+          title: copy.updateCodexCli
+        },
+        tooltip: status.message ?? copy.updateCodexCli
+      }))
+    }
+    return items
   }
 
   private threadItems(threads: ThreadRecord[], inTrash = false): SidebarItem[] {

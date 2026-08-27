@@ -20,6 +20,7 @@ export interface RpcResponse {
 const METHODS = new Set<RpcMethod>([
   'getPlatformCapabilities',
   'getEnvironmentStatus',
+  'updateCodexCli',
   'listThreads',
   'deleteThreads',
   'trashThreads',
@@ -66,7 +67,7 @@ function isProjectId(value: unknown): value is string {
 }
 
 function validArgs(method: RpcMethod, args: unknown[]): boolean {
-  if (['getPlatformCapabilities', 'getEnvironmentStatus', 'listThreads', 'repairDesktopRecents',
+  if (['getPlatformCapabilities', 'getEnvironmentStatus', 'updateCodexCli', 'listThreads', 'repairDesktopRecents',
     'chooseCliPath', 'getSettings', 'listProjects', 'emptyTrash',
     'importCurrentWorkspaceProject'].includes(method)) return args.length === 0
   if (['archiveThreads', 'unarchiveThreads', 'trashThreads', 'restoreThreadsFromTrash']
