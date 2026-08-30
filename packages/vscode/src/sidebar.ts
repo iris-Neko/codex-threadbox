@@ -391,8 +391,7 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
 
   async deleteThreads(items: readonly SidebarItem[]): Promise<void> {
     const copy = labels(this.locale)
-    const ids = items.flatMap((item) => item.thread ? [item.thread] : [])
-      .filter((thread) => thread.status !== 'active' && !thread.pinned).map((thread) => thread.id)
+    const ids = items.flatMap((item) => item.thread ? [item.thread.id] : [])
     if (ids.length === 0) { await vscode.window.showWarningMessage(copy.noEligibleTasks); return }
     const confirmed = await vscode.window.showWarningMessage(
       `${copy.moveToTrashConfirm}\n\n${ids.length}`, { modal: true }, copy.moveToTrash)

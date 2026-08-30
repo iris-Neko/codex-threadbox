@@ -257,7 +257,7 @@ export function ThreadTable({
                   ? t('includedByParentHint')
                   : inTrash
                     ? t('restoreFromTrashHint')
-                    : thread.pinned
+                    : thread.pinned && !taskTrash
                       ? t('pinnedCannotDelete')
                       : taskTrash
                         ? t('moveToTrashHint')
@@ -265,7 +265,7 @@ export function ThreadTable({
               }
               aria-label={inTrash ? t('restoreFromTrash') : taskTrash ? t('moveToTrash') : t('delete')}
               disabled={threadMutationDisabled || automaticallyIncluded || !matchesFilter ||
-                (!inTrash && (thread.status === 'active' || thread.pinned))}
+                (!inTrash && !taskTrash && (thread.status === 'active' || thread.pinned))}
               onClick={() => onDelete(thread)}
             >
               {inTrash

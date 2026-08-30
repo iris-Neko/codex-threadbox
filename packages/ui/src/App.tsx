@@ -464,8 +464,7 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
       thread.status !== 'active' && thread.archived)
     .map((thread) => thread.id)
   const trashSelected = selectedRootThreads
-    .filter((thread) => !trashedThreadIds.has(thread.id) &&
-      thread.status !== 'active' && !thread.pinned)
+    .filter((thread) => !trashedThreadIds.has(thread.id))
     .map((thread) => thread.id)
   const restoreSelected = selectedRootThreads
     .filter((thread) => trashedThreadIds.has(thread.id))

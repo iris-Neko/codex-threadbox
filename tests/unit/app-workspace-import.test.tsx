@@ -6,10 +6,14 @@ import type {
   BatchOperationResult,
   EnvironmentStatus,
   ProjectSnapshot,
-  ThreadboxApi
+  ThreadboxApi,
+  ThreadRecord
 } from '../../src/shared/contracts'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+})
 
 const environment: EnvironmentStatus = {
   state: 'ready',
@@ -26,11 +30,13 @@ const batch: BatchOperationResult = {
   succeeded: [], failed: [], skipped: [], cascadedCount: 0, refreshedAt: 1
 }
 
-function createApi(workspaceProjectImport: boolean): {
+function createApi(workspaceProjectImport: boolean, threads: ThreadRecord[] = []): {
   api: ThreadboxApi
   importWorkspace: ReturnType<typeof vi.fn>
+  trash: ReturnType<typeof vi.fn>
 } {
   const importWorkspace = vi.fn(async () => projects)
+  const trash = vi.fn(async () => batch)
   const api: ThreadboxApi = {
     getPlatformCapabilities: vi.fn(async () => ({
       host: 'vscode',
@@ -46,13 +52,14 @@ function createApi(workspaceProjectImport: boolean): {
     })),
     getEnvironmentStatus: vi.fn(async () => environment),
     listThreads: vi.fn(async () => ({
-      threads: [],
+      threads,
       environment,
       inventory: { state: 'complete', message: null },
       desktopRecents: { state: 'clean', staleCount: 0, staleEntries: [], message: null },
       refreshedAt: 1
     })),
     deleteThreads: vi.fn(async () => batch),
+    trashThreads: trash,
     archiveThreads: vi.fn(async () => batch),
     unarchiveThreads: vi.fn(async () => batch),
     setPinned: vi.fn(async () => batch),
@@ -73,7 +80,7 @@ function createApi(workspaceProjectImport: boolean): {
     getSettings: vi.fn(async () => ({ locale: 'en', customCliPath: null })),
     updateSettings: vi.fn(async () => ({ locale: 'en', customCliPath: null }))
   }
-  return { api, importWorkspace }
+  return { api, importWorkspace, trash }
 }
 
 describe('Manager workspace import', () => {
@@ -91,5 +98,28 @@ describe('Manager workspace import', () => {
 
     await screen.findByRole('button', { name: 'New project' })
     expect(screen.queryByRole('button', { name: 'Import workspace' })).not.toBeInTheDocument()
+  })
+})
+
+describe('Manager task Trash', () => {
+  it('revalidates stale active status in the host instead of blocking deletion in the UI', async () => {
+    const staleActive: ThreadRecord = {
+      id: 'stale-active', title: 'Stale Windows task', preview: '', cwd: 'C:\\work',
+      projectId: null, createdAt: 1, updatedAt: 2, source: 'vscode', archived: false,
+      pinned: false, status: 'active', parentThreadId: null, descendantCount: 0,
+      internal: false, ineligibleReason: 'active'
+    }
+    const { api, trash } = createApi(false, [staleActive])
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<App api={api} />)
+
+    expect(await screen.findByRole('button', { name: 'Move to Trash' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Task: Stale Windows task' }))
+    const toolbarAction = screen.getAllByRole('button', { name: 'Move to Trash' })
+      .find((button) => button.textContent?.includes('Move to Trash'))
+    expect(toolbarAction).toBeEnabled()
+    fireEvent.click(toolbarAction!)
+
+    await waitFor(() => expect(trash).toHaveBeenCalledWith(['stale-active']))
   })
 })
