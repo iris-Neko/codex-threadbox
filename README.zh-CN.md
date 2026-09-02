@@ -96,7 +96,7 @@ threadbox
 
 可从 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=irisNeko.codex-threadbox-vscode)、[Open VSX](https://open-vsx.org/extension/irisNeko/codex-threadbox-vscode) 或 Release 中的 VSIX 安装 **Threadbox for Codex**。打开官方 Codex 侧边栏并展开 **Threadbox**，可用**导入当前工作区**、拖放、多选或**移动到项目**管理项目树；将 `threadbox.sidebarLocation` 设置为 `standalone` 可恢复原来的独立活动栏入口，未检测到兼容的 Codex 侧边栏时也会自动回退。命令面板中的 **Threadbox: Open Manager** 用于打开完整管理器。
 
-插件声明了 `extensionKind: ["workspace"]`。在 Remote SSH、Dev Container 和 Codespaces 中，Codex CLI、`CODEX_HOME`、任务数据和 App Server 进程都位于远端。需要时使用 machine-scoped 的 `threadbox.codexBinary`、`threadbox.codexHome` 和 `threadbox.language` 设置。检测到 CLI 低于最低版本时，侧边栏和完整管理器会显示**更新 Codex CLI**；点击后会在该扩展宿主运行官方 `codex update` 自更新命令，并在重新连接前校验新版本。CLI 缺失或路径无效时仍需先安装，或在设置中配置路径。未信任工作区不会启动 Codex 或执行任务修改。
+插件声明了 `extensionKind: ["workspace"]`。在 Remote SSH、Dev Container 和 Codespaces 中，Codex CLI、`CODEX_HOME`、任务数据和 App Server 进程都位于远端。需要时使用 machine-scoped 的 `threadbox.codexBinary`、`threadbox.codexHome` 和 `threadbox.language` 设置。Codex CLI 缺失时，侧边栏和完整管理器可以为当前用户运行 OpenAI 的[官方独立安装脚本](https://developers.openai.com/codex/cli#getting-started)，验证确切的用户级可执行文件后再写入远端 machine-scoped 设置；旧版本仍先运行 `codex update`。系统级 npm 安装遇到 `EACCES` 或 `EPERM` 时，Threadbox 会优先建议用 `sudo` 原地更新，只保留一套 Codex；如果用户改选用户级独立安装，安装成功后会明确提示卸载旧的系统版本，避免 PATH 冲突。sudo 命令只会显示在远端集成终端中，Threadbox 不读取密码。未信任工作区不会安装或启动 Codex，也不会修改任务元数据。
 
 Threadbox 项目名称和根任务归属保存在该扩展宿主的 VS Code 全局存储中，不修改 Codex 数据库，也不会在不同远程主机间自动同步。Codex 界面中的项目目前没有通过公开 App Server 暴露，因此 Threadbox 无法导入或同步这些项目定义；其中的任务仍会按工作目录显示，并可照常在 Codex 中打开和继续。内置**垃圾箱**支持所有任务：移入时会归档任务，恢复时会尽量回到原 Threadbox 项目，只有执行**清空垃圾箱**才会永久删除符合条件的任务记录。整个过程始终保留工作目录。
 
@@ -142,7 +142,7 @@ npm run package
 
 ## 范围
 
-Threadbox 不包含完整聊天查看/导出、任务数据库修复、无人值守的 CLI 自动升级或内置 Codex CLI。VS Code 插件只会在用户点击更新操作后运行官方 `codex update` 命令。“最近任务”修复仅限上文所述的可重建侧栏派生目录。
+Threadbox 不包含完整聊天查看/导出、任务数据库修复、无人值守的 CLI 修改或内置 Codex CLI。VS Code 插件只会在用户点击对应操作后运行官方安装或更新命令；需要权限的 npm 命令会放到可见终端中，由用户自行授权。“最近任务”修复仅限上文所述的可重建侧栏派生目录。
 
 ## 许可证
 

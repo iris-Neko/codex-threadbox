@@ -27,6 +27,13 @@ const ready: EnvironmentStatus = {
   message: null,
   capabilities: { pinning: true }
 }
+const missing: EnvironmentStatus = {
+  ...outdated,
+  state: 'missing',
+  cliPath: null,
+  cliVersion: null,
+  message: 'Codex CLI was not found.'
+}
 const projects: ProjectSnapshot = { projects: [], assignments: {}, refreshedAt: 1 }
 const batch: BatchOperationResult = {
   succeeded: [], failed: [], skipped: [], cascadedCount: 0, refreshedAt: 1
@@ -79,24 +86,43 @@ function createApi(initial: EnvironmentStatus, canUpdate: boolean): {
 describe('Manager Codex CLI update', () => {
   it('updates an outdated CLI and refreshes the manager', async () => {
     const { api, update } = createApi(outdated, true)
-    render(<App api={api} version="0.8.0" />)
+    render(<App api={api} version="0.9.0" />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Update Codex CLI' }))
     await waitFor(() => expect(update).toHaveBeenCalledOnce())
     expect(await screen.findByText('Codex CLI updated to 0.150.1.')).toBeInTheDocument()
   })
 
+  it('installs a missing CLI for the current user and refreshes the manager', async () => {
+    const { api, update } = createApi(missing, true)
+    render(<App api={api} version="0.9.0" />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Install Codex CLI' }))
+    await waitFor(() => expect(update).toHaveBeenCalledOnce())
+    expect(await screen.findByText(
+      'Codex CLI 0.150.1 installed for the current user.'
+    )).toBeInTheDocument()
+  })
+
   it('does not show the update action when the host cannot update Codex', async () => {
     const { api } = createApi(outdated, false)
-    render(<App api={api} version="0.8.0" />)
+    render(<App api={api} version="0.9.0" />)
 
     await screen.findByText('Codex CLI update required')
     expect(screen.queryByRole('button', { name: 'Update Codex CLI' })).not.toBeInTheDocument()
   })
 
+  it('does not show the install action when the host cannot install Codex', async () => {
+    const { api } = createApi(missing, false)
+    render(<App api={api} version="0.9.0" />)
+
+    await screen.findByText('Codex CLI is not ready')
+    expect(screen.queryByRole('button', { name: 'Install Codex CLI' })).not.toBeInTheDocument()
+  })
+
   it('does not show the update action when Codex already meets the minimum', async () => {
     const { api } = createApi(ready, true)
-    render(<App api={api} version="0.8.0" />)
+    render(<App api={api} version="0.9.0" />)
 
     await screen.findByText('Nothing here')
     expect(screen.queryByRole('button', { name: 'Update Codex CLI' })).not.toBeInTheDocument()

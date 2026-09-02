@@ -200,6 +200,7 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
 
   const updateCodexCli = async (): Promise<void> => {
     if (!api.updateCodexCli) return
+    const installing = environment.state === 'missing'
     setBusy(true)
     setError(null)
     try {
@@ -209,7 +210,9 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
         throw new Error(status.message ?? t('cliUpdateFailed'))
       }
       await refresh()
-      setNotice(t('cliUpdateSucceeded', { version: status.cliVersion ?? status.minimumVersion }))
+      setNotice(t(installing ? 'cliInstallSucceeded' : 'cliUpdateSucceeded', {
+        version: status.cliVersion ?? status.minimumVersion
+      }))
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : t('cliUpdateFailed'))
     } finally {
@@ -849,7 +852,8 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
             <h2>{t(environment.state === 'outdated' ? 'cliOutdatedTitle' : 'cliMissingTitle')}</h2>
             <p>{environment.message ?? t('cliMissingBody', { minimum: environment.minimumVersion })}</p>
             <div className="center-state__actions">
-              {environment.state === 'outdated' && platform.codexCliUpdate && api.updateCodexCli && (
+              {(environment.state === 'missing' || environment.state === 'outdated') &&
+                platform.codexCliUpdate && api.updateCodexCli && (
                 <button
                   className="button button--primary"
                   type="button"
@@ -859,7 +863,9 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
                   {busy
                     ? <LoaderCircle size={16} className="spin" aria-hidden="true" />
                     : <Download size={16} aria-hidden="true" />}
-                  {t(busy ? 'updatingCodexCli' : 'updateCodexCli')}
+                  {t(busy
+                    ? environment.state === 'missing' ? 'installingCodexCli' : 'updatingCodexCli'
+                    : environment.state === 'missing' ? 'installCodexCli' : 'updateCodexCli')}
                 </button>
               )}
               <button

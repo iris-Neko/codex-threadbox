@@ -20,7 +20,13 @@ import {
   chooseProjectDirectory,
   createProjectThread
 } from './codex-projects'
-import { CodexCliUpdater } from './codex-update'
+import {
+  CodexCliPermissionError,
+  CodexCliUpdater,
+  NPM_UNINSTALL_COMMAND,
+  SUDO_NPM_UNINSTALL_COMMAND,
+  SUDO_NPM_UPDATE_COMMAND
+} from './codex-update'
 import { parseRpcRequest, type RpcRequest, type RpcResponse } from './rpc'
 import { ProjectStore } from './project-store'
 import { SidebarItem, ThreadboxSidebarProvider } from './sidebar'
@@ -108,6 +114,12 @@ function configuredLocale(): AppLocale {
   return vscode.env.language.toLowerCase().startsWith('zh') ? 'zh-CN' : 'en'
 }
 
+function openRemoteTerminal(command: string, title: string): void {
+  const terminal = vscode.window.createTerminal({ name: title, isTransient: true })
+  terminal.show(false)
+  terminal.sendText(command, true)
+}
+
 class RuntimeHost implements vscode.Disposable {
   private runtime: CodexRuntime | null = null
   private client: AppServerClient | null = null
@@ -159,17 +171,52 @@ class RuntimeHost implements vscode.Disposable {
   private async performCodexCliUpdate(): Promise<EnvironmentStatus> {
     const runtime = this.getRuntime()
     const before = await runtime.probe(true)
+    if (before.status.state === 'ready') {
+      throw new Error(`Codex CLI ${before.status.cliVersion ?? ''} already satisfies the minimum version.`)
+    }
+    if (before.status.state === 'missing') {
+      return this.installUserLevelCodex(null)
+    }
     if (before.status.state !== 'outdated') {
-      if (before.status.state === 'ready') {
-        throw new Error(`Codex CLI ${before.status.cliVersion ?? ''} already satisfies the minimum version.`)
-      }
-      throw new Error(before.status.message ?? 'Codex CLI is not available for self-update.')
+      throw new Error(before.status.message ?? 'Codex CLI is not available for installation or update.')
     }
 
     this.client?.stop()
     this.client = null
     this.service = null
-    await this.updater.update(before.command, this.environment ?? process.env)
+    try {
+      await this.updater.update(before.command, this.environment ?? process.env)
+    } catch (error) {
+      if (!(error instanceof CodexCliPermissionError)) throw error
+      const locale = configuredLocale()
+      const sudoLabel = locale === 'zh-CN' ? '使用 sudo 更新' : 'Update with sudo'
+      const userLabel = locale === 'zh-CN' ? '改为用户级安装' : 'Install for current user'
+      const message = locale === 'zh-CN'
+        ? process.platform === 'win32'
+          ? '当前 Codex CLI 没有权限更新。可以用管理员终端更新原安装，或者改为仅当前用户可用的独立安装。'
+          : '当前 Codex CLI 安装在系统目录，普通用户没有权限更新。建议使用 sudo 更新原安装，只保留一套 Codex；共享服务器也可以改为仅当前用户可用的独立安装。'
+        : process.platform === 'win32'
+          ? 'The current Codex CLI cannot be updated without administrator permission. Update the existing installation from an Administrator terminal, or install a standalone copy for only this user.'
+          : 'The current Codex CLI is installed in a system directory and cannot be updated without permission. Use sudo to update the existing installation and keep one Codex, or install a standalone copy for only this user on a shared server.'
+      const choice = process.platform === 'win32'
+        ? await vscode.window.showWarningMessage(message, { modal: true }, userLabel)
+        : await vscode.window.showWarningMessage(message, { modal: true }, sudoLabel, userLabel)
+      if (choice === sudoLabel) {
+        openRemoteTerminal(
+          SUDO_NPM_UPDATE_COMMAND,
+          locale === 'zh-CN' ? 'Threadbox：更新 Codex CLI' : 'Threadbox: Update Codex CLI'
+        )
+        throw new Error(locale === 'zh-CN'
+          ? '已在当前远端的集成终端运行 sudo 更新命令。请输入 sudo 密码；命令完成后点击“重试”。'
+          : 'The sudo update command is running in the current remote terminal. Enter your sudo password, then click Retry after it completes.',
+        { cause: error })
+      }
+      if (choice === userLabel) return this.installUserLevelCodex(before.command)
+      throw new Error(
+        locale === 'zh-CN' ? 'Codex CLI 更新已取消。' : 'Codex CLI update was cancelled.',
+        { cause: error }
+      )
+    }
     runtime.invalidate()
     const after = await runtime.probe(true)
     if (after.status.state !== 'ready') {
@@ -181,13 +228,72 @@ class RuntimeHost implements vscode.Disposable {
     return after.status
   }
 
-  reset(): void {
-    this.updater.stop()
+  private async installUserLevelCodex(conflictingNpmPath: string | null): Promise<EnvironmentStatus> {
+    const previousPath = configuredString('codexBinary')
+    const environment = this.environment ?? process.env
+    this.client?.stop()
+    this.client = null
+    this.service = null
+    const installed = await this.updater.installStandalone(environment)
+    const configuration = vscode.workspace.getConfiguration(CONFIGURATION)
+    await configuration.update(
+      'codexBinary',
+      installed.path,
+      vscode.ConfigurationTarget.Global
+    )
+    this.resetRuntimeState()
+    const after = await this.getRuntime().probe(true)
+    if (after.status.state !== 'ready') {
+      await configuration.update(
+        'codexBinary',
+        previousPath ?? '',
+        vscode.ConfigurationTarget.Global
+      )
+      this.resetRuntimeState()
+      throw new Error(
+        `Codex CLI installation completed, but ${installed.path} is not usable. ${after.status.message ?? ''}`
+          .trim()
+      )
+    }
+    if (conflictingNpmPath) await this.offerSystemNpmCleanup(conflictingNpmPath)
+    return after.status
+  }
+
+  private async offerSystemNpmCleanup(conflictingPath: string): Promise<void> {
+    const locale = configuredLocale()
+    const cleanupLabel = locale === 'zh-CN' ? '卸载旧的系统版本' : 'Uninstall old system version'
+    const choice = await vscode.window.showWarningMessage(
+      locale === 'zh-CN'
+        ? `用户级 Codex 已安装并验证。旧的系统级 npm 版本仍在 ${conflictingPath}；建议现在卸载，避免 PATH 冲突。卸载需要管理员权限，并可能影响共享服务器上的其他账号。`
+        : `The user-level Codex installation is ready. The old system npm installation is still at ${conflictingPath}; uninstall it now to avoid PATH conflicts. Administrator permission is required, and removal may affect other accounts on a shared server.`,
+      { modal: true },
+      cleanupLabel
+    )
+    if (choice !== cleanupLabel) return
+    openRemoteTerminal(
+      process.platform === 'win32' ? NPM_UNINSTALL_COMMAND : SUDO_NPM_UNINSTALL_COMMAND,
+      locale === 'zh-CN' ? 'Threadbox：清理旧 Codex CLI' : 'Threadbox: Remove old Codex CLI'
+    )
+    void vscode.window.showInformationMessage(locale === 'zh-CN'
+      ? process.platform === 'win32'
+        ? '已在当前扩展宿主的集成终端运行卸载命令；如权限不足，请在管理员终端执行。Threadbox 已固定使用用户级 Codex。'
+        : '已在当前远端的集成终端运行卸载命令。请输入 sudo 密码完成清理。Threadbox 已固定使用用户级 Codex。'
+      : process.platform === 'win32'
+        ? 'The uninstall command is running in the current extension host terminal. If permission is denied, run it from an Administrator terminal. Threadbox is already using the user-level Codex.'
+        : 'The uninstall command is running in the current remote terminal. Enter your sudo password to finish cleanup. Threadbox is already using the user-level Codex.')
+  }
+
+  private resetRuntimeState(): void {
     this.client?.stop()
     this.runtime = null
     this.client = null
     this.service = null
     this.environment = null
+  }
+
+  reset(): void {
+    this.updater.stop()
+    this.resetRuntimeState()
     this.updatePromise = null
   }
 
@@ -490,7 +596,7 @@ export interface ThreadboxExtensionApi {
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<ThreadboxExtensionApi> {
-  const version = String(context.extension.packageJSON.version ?? '0.8.1')
+  const version = String(context.extension.packageJSON.version ?? '0.9.0')
   const runtime = new RuntimeHost(version)
   await migrateLegacyProjectStorage(context.globalStorageUri.fsPath)
   const projects = new ProjectStore(join(context.globalStorageUri.fsPath, 'projects-v1.json'))

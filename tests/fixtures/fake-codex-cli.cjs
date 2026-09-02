@@ -21,6 +21,10 @@ if (process.argv.includes('update')) {
     })}\n`)
   }
   const finishUpdate = () => {
+    if (process.env.THREADBOX_FAKE_UPDATE_PERMISSION === '1') {
+      process.stderr.write('npm error code EACCES\nnpm error path /usr/lib/node_modules/@openai/codex\n')
+      process.exit(243)
+    }
     if (process.env.THREADBOX_FAKE_UPDATE_FAIL === '1') {
       process.stderr.write('fake Codex update failed\n')
       process.exit(9)

@@ -32,6 +32,9 @@ interface SidebarLabels {
   unavailable: string
   loadFailed: string
   partialInventory: string
+  installCodexCli: string
+  installingCodexCli: string
+  codexCliInstalled: string
   updateCodexCli: string
   updatingCodexCli: string
   codexCliUpdated: string
@@ -65,6 +68,8 @@ function labels(locale: string): SidebarLabels {
       unassigned: '未归属', archived: '已归档', workspaceTrust: '需要信任工作区才能读取 Codex 任务',
       unavailable: 'Codex CLI 不可用', loadFailed: '任务列表载入失败',
       partialInventory: '部分任务未载入', newProject: '新建项目', projectName: '项目名称',
+      installCodexCli: '安装 Codex CLI', installingCodexCli: '正在安装 Codex CLI…',
+      codexCliInstalled: 'Codex CLI 已安装',
       updateCodexCli: '更新 Codex CLI', updatingCodexCli: '正在更新 Codex CLI…',
       codexCliUpdated: 'Codex CLI 已更新',
       newThread: '新建对话', threadName: '对话名称', threadCreated: '已创建对话',
@@ -85,6 +90,8 @@ function labels(locale: string): SidebarLabels {
     unassigned: 'Unassigned', archived: 'Archived', workspaceTrust: 'Trust this workspace to read Codex tasks',
     unavailable: 'Codex CLI unavailable', loadFailed: 'Task list failed to load',
     partialInventory: 'Some tasks were not loaded', newProject: 'New project', projectName: 'Project name',
+    installCodexCli: 'Install Codex CLI', installingCodexCli: 'Installing Codex CLI…',
+    codexCliInstalled: 'Codex CLI installed',
     updateCodexCli: 'Update Codex CLI', updatingCodexCli: 'Updating Codex CLI…',
     codexCliUpdated: 'Codex CLI updated',
     newThread: 'New task', threadName: 'Task name', threadCreated: 'Task created',
@@ -441,13 +448,15 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
     if (!this.api.updateCodexCli) return
     const copy = labels(this.locale)
     try {
+      const before = await this.api.getEnvironmentStatus()
+      const installing = before.state === 'missing'
       const status = await vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification,
-        title: copy.updatingCodexCli,
+        title: installing ? copy.installingCodexCli : copy.updatingCodexCli,
         cancellable: false
       }, () => this.api.updateCodexCli!())
       await vscode.window.showInformationMessage(
-        `${copy.codexCliUpdated}: ${status.cliVersion ?? status.minimumVersion}`
+        `${installing ? copy.codexCliInstalled : copy.codexCliUpdated}: ${status.cliVersion ?? status.minimumVersion}`
       )
       this.refresh()
     } catch (error) {
@@ -487,16 +496,17 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
         : undefined,
       tooltip: status.message ?? version
     })]
-    if (status.state === 'outdated' && this.api.updateCodexCli) {
-      items.push(new SidebarItem(copy.updateCodexCli, {
+    if ((status.state === 'missing' || status.state === 'outdated') && this.api.updateCodexCli) {
+      const title = status.state === 'missing' ? copy.installCodexCli : copy.updateCodexCli
+      items.push(new SidebarItem(title, {
         id: 'threadbox:update-codex-cli',
         kind: 'action',
         icon: 'cloud-download',
         command: {
           command: this.updateCodexCliCommand,
-          title: copy.updateCodexCli
+          title
         },
-        tooltip: status.message ?? copy.updateCodexCli
+        tooltip: status.message ?? title
       }))
     }
     return items
