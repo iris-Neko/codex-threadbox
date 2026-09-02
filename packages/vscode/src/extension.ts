@@ -153,7 +153,8 @@ class RuntimeHost implements vscode.Disposable {
     this.client = new AppServerClient(this.getRuntime(), {
       name: 'codex_threadbox_vscode',
       title: 'Threadbox for Codex VS Code',
-      version: this.version
+      version: this.version,
+      initializeCapabilities: { experimentalApi: true, requestAttestation: false }
     })
     return this.client
   }
@@ -596,7 +597,7 @@ export interface ThreadboxExtensionApi {
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<ThreadboxExtensionApi> {
-  const version = String(context.extension.packageJSON.version ?? '0.9.0')
+  const version = String(context.extension.packageJSON.version ?? '0.9.1')
   const runtime = new RuntimeHost(version)
   await migrateLegacyProjectStorage(context.globalStorageUri.fsPath)
   const projects = new ProjectStore(join(context.globalStorageUri.fsPath, 'projects-v1.json'))

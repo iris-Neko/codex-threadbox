@@ -132,7 +132,11 @@ export async function run(): Promise<void> {
         event?: string
         args?: string[]
         method?: string
-        params?: { useStateDbOnly?: boolean }
+        params?: {
+          useStateDbOnly?: boolean
+          historyMode?: string
+          capabilities?: { experimentalApi?: boolean; requestAttestation?: boolean }
+        }
       })
     assert(appServerMessages.some((message) =>
       message.event === 'cli-update' && JSON.stringify(message.args) === JSON.stringify(['update'])
@@ -140,6 +144,14 @@ export async function run(): Promise<void> {
     assert(appServerMessages.some((message) =>
       message.method === 'thread/list' && message.params?.useStateDbOnly === true
     ), 'VS Code did not use the responsive state-database task listing mode.')
+    assert(appServerMessages.some((message) =>
+      message.method === 'initialize' &&
+      message.params?.capabilities?.experimentalApi === true &&
+      message.params.capabilities.requestAttestation === false
+    ), 'VS Code did not opt into the history-mode capability.')
+    assert(appServerMessages.some((message) =>
+      message.method === 'thread/start' && message.params?.historyMode === 'legacy'
+    ), 'VS Code did not create blank tasks with resumable legacy history.')
     assert(!appServerMessages.some((message) => message.method?.startsWith('project/')),
       'VS Code sent an unsupported project/* request to App Server.')
   } finally {

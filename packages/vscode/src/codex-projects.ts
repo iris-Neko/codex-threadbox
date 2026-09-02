@@ -7,6 +7,14 @@ import type { ThreadStartResponse } from '../../../src/shared/protocol/generated
 import type { ThreadReadResponse } from '../../../src/shared/protocol/generated/v2/ThreadReadResponse'
 import type { RpcClientLike } from '../../core/src/app-server-client'
 
+type LegacyThreadStartParams = ThreadStartParams & { historyMode: 'legacy' }
+type ThreadStartWithHistory = ThreadStartResponse & {
+  thread: { historyMode?: string }
+}
+type ThreadReadWithHistory = ThreadReadResponse & {
+  thread: { historyMode?: string }
+}
+
 export interface DirectoryPicker {
   pickRoot(roots: readonly string[]): Promise<string | null>
   pickFolder(): Promise<string | null>
@@ -49,19 +57,22 @@ export async function createProjectThread(
   if (!cwd) throw new Error('A working directory is required.')
   if (project.kind !== 'threadbox') throw new Error('Only Threadbox projects can create tasks.')
 
-  const params: ThreadStartParams = { cwd }
+  const params: LegacyThreadStartParams = { cwd, historyMode: 'legacy' }
 
   let threadId: string | null = null
   try {
-    const started = await client.request<ThreadStartResponse>('thread/start', params)
+    const started = await client.request<ThreadStartWithHistory>('thread/start', params)
     threadId = started.thread.id
+    if (started.thread.historyMode !== 'legacy') {
+      throw new Error('Codex did not create the new task with resumable history.')
+    }
     await client.request('thread/name/set', { threadId, name: normalizedName })
-    const verified = await client.request<ThreadReadResponse>('thread/read', {
+    const verified = await client.request<ThreadReadWithHistory>('thread/read', {
       threadId,
       includeTurns: false
     })
     if (verified.thread.id !== threadId || verified.thread.ephemeral ||
-      verified.thread.name !== normalizedName) {
+      verified.thread.name !== normalizedName || verified.thread.historyMode !== 'legacy') {
       throw new Error('Codex did not persist the new blank task.')
     }
     await assignThreadbox(threadId, project.id)

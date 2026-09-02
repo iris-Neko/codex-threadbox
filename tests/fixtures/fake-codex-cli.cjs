@@ -163,6 +163,7 @@ function log(message) {
 log({ event: 'server-start', pid: process.pid })
 let activeListRequests = 0
 let createdThreadSequence = 0
+let experimentalApi = false
 const created = new Map()
 
 function findThread(threadId) {
@@ -185,6 +186,7 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
     return
   }
   if (message.method === 'initialize') {
+    experimentalApi = message.params?.capabilities?.experimentalApi === true
     send({ id: message.id, result: { userAgent: 'fake-codex' } })
   } else if (message.method === 'thread/list') {
     if (process.env.THREADBOX_FAKE_HANG === '1') return
@@ -204,6 +206,13 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
       }
     })
   } else if (message.method === 'thread/start') {
+    if (!experimentalApi || message.params.historyMode !== 'legacy') {
+      send({
+        id: message.id,
+        error: { code: -32602, message: 'thread/start.historyMode requires legacy experimental mode' }
+      })
+      return
+    }
     createdThreadSequence += 1
     const id = `019f0000-0000-7000-9000-${String(createdThreadSequence).padStart(12, '0')}`
     const thread = {
@@ -212,6 +221,8 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
       sessionId: id,
       parentThreadId: null,
       preview: '',
+      historyMode: message.params.historyMode,
+      path: `/fake/sessions/${id}.jsonl`,
       projectId: message.params.projectId ?? null,
       cwd: message.params.cwd,
       name: null,

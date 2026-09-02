@@ -43,11 +43,11 @@ function project(overrides: Partial<ProjectRecord> = {}): ProjectRecord {
 }
 
 function started(threadId = 'thread-new'): unknown {
-  return { thread: { id: threadId } }
+  return { thread: { id: threadId, historyMode: 'legacy' } }
 }
 
 function persisted(threadId: string, name: string): unknown {
-  return { thread: { id: threadId, name, ephemeral: false } }
+  return { thread: { id: threadId, name, ephemeral: false, historyMode: 'legacy' } }
 }
 
 describe('VS Code Codex projects', () => {
@@ -88,7 +88,7 @@ describe('VS Code Codex projects', () => {
     await expect(createProjectThread(client, project(), '  New task  ', '/work/app', assign))
       .resolves.toMatchObject({ threadId: 'thread-new', name: 'New task' })
     expect(client.calls).toEqual([
-      { method: 'thread/start', params: { cwd: '/work/app' } },
+      { method: 'thread/start', params: { cwd: '/work/app', historyMode: 'legacy' } },
       { method: 'thread/name/set', params: { threadId: 'thread-new', name: 'New task' } },
       { method: 'thread/read', params: { threadId: 'thread-new', includeTurns: false } }
     ])
@@ -145,6 +145,21 @@ describe('VS Code Codex projects', () => {
     expect(verificationClient.calls.at(-1)).toEqual({
       method: 'thread/delete', params: { threadId: 'verify-failed' }
     })
+  })
+
+  it('removes a task that Codex creates with non-resumable history', async () => {
+    const client = new FakeClient()
+    client.responses.set('thread/start', [{
+      thread: { id: 'paginated-task', historyMode: 'paginated' }
+    }])
+
+    await expect(createProjectThread(
+      client, project(), 'Name', '/work/app', async () => undefined
+    )).rejects.toThrow(/resumable history/)
+    expect(client.calls).toEqual([
+      { method: 'thread/start', params: { cwd: '/work/app', historyMode: 'legacy' } },
+      { method: 'thread/delete', params: { threadId: 'paginated-task' } }
+    ])
   })
 
   it('reports the task ID when rollback also fails', async () => {
