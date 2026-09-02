@@ -10,7 +10,7 @@ release workflow unless the request explicitly requires it.
 | --- | --- | --- | --- |
 | Desktop | `0.3.0` | `src/`, Electron configuration, desktop packaging | `v<version>` |
 | CLI | `0.3.1` | `packages/cli/` | `cli-v<version>` |
-| VS Code | `0.9.1` | `packages/vscode/` | `vscode-v<version>` |
+| VS Code | `0.9.2` | `packages/vscode/` | `vscode-v<version>` |
 
 The desktop version comes from the root `package.json`. The CLI and VS Code
 versions come only from their own package manifests. Do not synchronize these

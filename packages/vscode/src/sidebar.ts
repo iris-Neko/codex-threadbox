@@ -181,6 +181,14 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
   ) {}
 
   refresh(): void { this.loaded = null; this.redraw() }
+
+  private async refreshNow(): Promise<void> {
+    this.loaded = null
+    this.cached = this.loadRootItems()
+    await this.cached
+    this.changed.fire(undefined)
+  }
+
   getTreeItem(element: SidebarItem): vscode.TreeItem { return element }
   getChildren(element?: SidebarItem): Promise<SidebarItem[]> | SidebarItem[] {
     if (element) return element.children ?? []
@@ -290,8 +298,8 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
     try {
       const created = await this.api.createThreadInProject(project.id, name)
       if (!created) return
+      await this.refreshNow()
       await vscode.window.showInformationMessage(`${copy.threadCreated}: ${created.name}`)
-      this.refresh()
     } catch (error) { await this.showError(error) }
   }
 

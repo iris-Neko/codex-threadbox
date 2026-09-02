@@ -88,5 +88,13 @@ export async function createProjectThread(
       )
     }
     throw error
+  } finally {
+    if (threadId) {
+      try {
+        await client.request('thread/unsubscribe', { threadId })
+      } catch {
+        // The VS Code host closes the one-shot App Server client immediately afterwards.
+      }
+    }
   }
 }

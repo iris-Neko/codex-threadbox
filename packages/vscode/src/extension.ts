@@ -150,13 +150,21 @@ class RuntimeHost implements vscode.Disposable {
 
   getClient(): AppServerClient {
     if (this.client) return this.client
-    this.client = new AppServerClient(this.getRuntime(), {
+    this.client = this.createClient()
+    return this.client
+  }
+
+  createOneShotClient(): AppServerClient {
+    return this.createClient()
+  }
+
+  private createClient(): AppServerClient {
+    return new AppServerClient(this.getRuntime(), {
       name: 'codex_threadbox_vscode',
       title: 'Threadbox for Codex VS Code',
       version: this.version,
       initializeCapabilities: { experimentalApi: true, requestAttestation: false }
     })
-    return this.client
   }
 
   updateCodexCli(): Promise<EnvironmentStatus> {
@@ -497,13 +505,18 @@ function createApi(runtime: RuntimeHost, projects: ProjectStore): ThreadboxApi {
         }
       })
       if (!cwd) return null
-      return createProjectThread(
-        runtime.getClient(),
-        project,
-        name,
-        cwd,
-        (threadId, targetProjectId) => projects.assignCreatedThread(threadId, targetProjectId)
-      )
+      const client = runtime.createOneShotClient()
+      try {
+        return await createProjectThread(
+          client,
+          project,
+          name,
+          cwd,
+          (threadId, targetProjectId) => projects.assignCreatedThread(threadId, targetProjectId)
+        )
+      } finally {
+        client.stop()
+      }
     },
     openWorkingDirectory: async (path) => {
       requireWorkspaceTrust(vscode.workspace.isTrusted)
@@ -597,7 +610,7 @@ export interface ThreadboxExtensionApi {
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<ThreadboxExtensionApi> {
-  const version = String(context.extension.packageJSON.version ?? '0.9.1')
+  const version = String(context.extension.packageJSON.version ?? '0.9.2')
   const runtime = new RuntimeHost(version)
   await migrateLegacyProjectStorage(context.globalStorageUri.fsPath)
   const projects = new ProjectStore(join(context.globalStorageUri.fsPath, 'projects-v1.json'))

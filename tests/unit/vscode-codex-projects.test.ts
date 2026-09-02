@@ -90,7 +90,8 @@ describe('VS Code Codex projects', () => {
     expect(client.calls).toEqual([
       { method: 'thread/start', params: { cwd: '/work/app', historyMode: 'legacy' } },
       { method: 'thread/name/set', params: { threadId: 'thread-new', name: 'New task' } },
-      { method: 'thread/read', params: { threadId: 'thread-new', includeTurns: false } }
+      { method: 'thread/read', params: { threadId: 'thread-new', includeTurns: false } },
+      { method: 'thread/unsubscribe', params: { threadId: 'thread-new' } }
     ])
     expect(assign).toHaveBeenCalledWith('thread-new', 'threadbox:one')
   })
@@ -118,9 +119,10 @@ describe('VS Code Codex projects', () => {
     await expect(createProjectThread(
       namingClient, project(), 'Name', '/work/app', async () => undefined
     )).rejects.toThrow('name failed')
-    expect(namingClient.calls.at(-1)).toEqual({
-      method: 'thread/delete', params: { threadId: 'name-failed' }
-    })
+    expect(namingClient.calls.slice(-2)).toEqual([
+      { method: 'thread/delete', params: { threadId: 'name-failed' } },
+      { method: 'thread/unsubscribe', params: { threadId: 'name-failed' } }
+    ])
 
     const assignmentClient = new FakeClient()
     assignmentClient.responses.set('thread/start', [started('assign-failed')])
@@ -132,9 +134,10 @@ describe('VS Code Codex projects', () => {
       '/work/app',
       async () => { throw new Error('assignment failed') }
     )).rejects.toThrow('assignment failed')
-    expect(assignmentClient.calls.at(-1)).toEqual({
-      method: 'thread/delete', params: { threadId: 'assign-failed' }
-    })
+    expect(assignmentClient.calls.slice(-2)).toEqual([
+      { method: 'thread/delete', params: { threadId: 'assign-failed' } },
+      { method: 'thread/unsubscribe', params: { threadId: 'assign-failed' } }
+    ])
 
     const verificationClient = new FakeClient()
     verificationClient.responses.set('thread/start', [started('verify-failed')])
@@ -142,9 +145,10 @@ describe('VS Code Codex projects', () => {
     await expect(createProjectThread(
       verificationClient, project(), 'Name', '/work/app', async () => undefined
     )).rejects.toThrow('task was not persisted')
-    expect(verificationClient.calls.at(-1)).toEqual({
-      method: 'thread/delete', params: { threadId: 'verify-failed' }
-    })
+    expect(verificationClient.calls.slice(-2)).toEqual([
+      { method: 'thread/delete', params: { threadId: 'verify-failed' } },
+      { method: 'thread/unsubscribe', params: { threadId: 'verify-failed' } }
+    ])
   })
 
   it('removes a task that Codex creates with non-resumable history', async () => {
@@ -158,8 +162,24 @@ describe('VS Code Codex projects', () => {
     )).rejects.toThrow(/resumable history/)
     expect(client.calls).toEqual([
       { method: 'thread/start', params: { cwd: '/work/app', historyMode: 'legacy' } },
-      { method: 'thread/delete', params: { threadId: 'paginated-task' } }
+      { method: 'thread/delete', params: { threadId: 'paginated-task' } },
+      { method: 'thread/unsubscribe', params: { threadId: 'paginated-task' } }
     ])
+  })
+
+  it('keeps a persisted task when unsubscribe fails because the host closes its client', async () => {
+    const client = new FakeClient()
+    client.responses.set('thread/start', [started()])
+    client.responses.set('thread/read', [persisted('thread-new', 'New task')])
+    client.failures.set('thread/unsubscribe', new Error('unsubscribe failed'))
+
+    await expect(createProjectThread(
+      client, project(), 'New task', '/work/app', async () => undefined
+    )).resolves.toMatchObject({ threadId: 'thread-new' })
+    expect(client.calls.at(-1)).toEqual({
+      method: 'thread/unsubscribe', params: { threadId: 'thread-new' }
+    })
+    expect(client.calls.some((call) => call.method === 'thread/delete')).toBe(false)
   })
 
   it('reports the task ID when rollback also fails', async () => {

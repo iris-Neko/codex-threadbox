@@ -152,6 +152,8 @@ export async function run(): Promise<void> {
     assert(appServerMessages.some((message) =>
       message.method === 'thread/start' && message.params?.historyMode === 'legacy'
     ), 'VS Code did not create blank tasks with resumable legacy history.')
+    assert(appServerMessages.some((message) => message.method === 'thread/unsubscribe'),
+      'VS Code did not unsubscribe from a newly created task.')
     assert(!appServerMessages.some((message) => message.method?.startsWith('project/')),
       'VS Code sent an unsupported project/* request to App Server.')
   } finally {

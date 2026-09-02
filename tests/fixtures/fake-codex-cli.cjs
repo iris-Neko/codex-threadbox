@@ -162,11 +162,36 @@ function log(message) {
 
 log({ event: 'server-start', pid: process.pid })
 let activeListRequests = 0
-let createdThreadSequence = 0
 let experimentalApi = false
+const createdStateFile = process.env.THREADBOX_FAKE_CREATED_FILE
+let createdThreadSequence = 0
 const created = new Map()
 
+function loadCreated() {
+  if (!createdStateFile) return
+  try {
+    const state = JSON.parse(readFileSync(createdStateFile, 'utf8'))
+    createdThreadSequence = Number.isInteger(state.sequence) ? state.sequence : 0
+    created.clear()
+    for (const thread of Array.isArray(state.threads) ? state.threads : []) {
+      if (thread && typeof thread.id === 'string') created.set(thread.id, thread)
+    }
+  } catch {
+    // A missing state file represents a fresh fake App Server installation.
+  }
+}
+loadCreated()
+
+function saveCreated() {
+  if (!createdStateFile) return
+  writeFileSync(createdStateFile, JSON.stringify({
+    sequence: createdThreadSequence,
+    threads: [...created.values()]
+  }), 'utf8')
+}
+
 function findThread(threadId) {
+  loadCreated()
   return active.find((item) => item.id === threadId) ??
     archived.find((item) => item.id === threadId) ??
     created.get(threadId)
@@ -232,22 +257,27 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
     // Real App Server keeps a blank task readable by ID but omits it from
     // thread/list until the conversation has a first turn.
     created.set(id, thread)
+    saveCreated()
     send({ id: message.id, result: { thread } })
   } else if (message.method === 'thread/name/set') {
     const thread = findThread(message.params.threadId)
     if (thread) thread.name = message.params.name
+    if (created.has(message.params.threadId)) saveCreated()
     send({ id: message.id, result: {} })
   } else if (message.method === 'thread/read') {
     const thread = findThread(message.params.threadId)
     if (thread) send({ id: message.id, result: { thread } })
     else send({ id: message.id, error: { code: -32000, message: `thread not loaded: ${message.params.threadId}` } })
   } else if (message.method === 'thread/delete') {
+    loadCreated()
     const activeIndex = active.findIndex((item) => item.id === message.params.threadId)
     if (activeIndex >= 0) active.splice(activeIndex, 1)
     const archivedIndex = archived.findIndex((item) => item.id === message.params.threadId)
     if (archivedIndex >= 0) archived.splice(archivedIndex, 1)
-    created.delete(message.params.threadId)
+    if (created.delete(message.params.threadId)) saveCreated()
     send({ id: message.id, result: {} })
+  } else if (message.method === 'thread/unsubscribe') {
+    send({ id: message.id, result: { status: 'unsubscribed' } })
   } else if (message.id !== undefined) {
     send({ id: message.id, result: {} })
   }
