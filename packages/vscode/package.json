@@ -2,7 +2,7 @@
   "name": "codex-threadbox-vscode",
   "displayName": "Codex Threadbox",
   "description": "Manage Codex tasks and projects from the native VS Code sidebar, locally or remotely.",
-  "version": "0.10.1",
+  "version": "1.0.0",
   "publisher": "irisNeko",
   "license": "MIT",
   "private": true,
@@ -14,6 +14,7 @@
   "files": [
     "dist/**",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "engines": {
@@ -437,7 +438,7 @@
           ],
           "default": "auto",
           "scope": "machine",
-          "description": "Language used by the Threadbox manager."
+          "description": "Language used by the Threadbox sidebar."
         },
         "threadbox.sidebarLocation": {
           "type": "string",
