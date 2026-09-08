@@ -78,11 +78,16 @@ export async function run(): Promise<void> {
     const assigned = await api.assignThreads(['019f0000-0000-7000-8000-000000000002'], project.id)
     assert(Object.values(assigned.assignments).includes(project.id), 'VS Code did not assign the task.')
     assert(api.createThreadInProject, 'VS Code did not expose project task creation.')
+    assert(capabilities.threadRenaming && api.renameThread, 'VS Code did not expose task renaming.')
     const localThread = await api.createThreadInProject(project.id, 'Threadbox project task')
     assert(localThread?.projectId === project.id, 'VS Code did not create a Threadbox project task.')
     const afterCreate = await api.listThreads()
     assert(afterCreate.threads.some((item) => item.id === localThread.threadId),
       'VS Code did not show a blank task omitted from thread/list.')
+    await api.renameThread(localThread.threadId, 'Renamed extension task')
+    assert((await api.listThreads()).threads.some((item) =>
+      item.id === localThread.threadId && item.title === 'Renamed extension task'),
+    'VS Code did not persist and refresh the renamed task.')
     assert(api.trashThreads && api.restoreThreadsFromTrash && api.emptyTrash,
       'VS Code did not expose task Trash operations.')
     const trashed = await api.trashThreads([localThread.threadId])
@@ -119,6 +124,7 @@ export async function run(): Promise<void> {
       'Threadbox workspace import command was not registered.')
     assert(commands.includes('threadbox.newThreadInProject'),
       'Threadbox project task creation command was not registered.')
+    assert(commands.includes('threadbox.renameThread'), 'Threadbox task renaming was not registered.')
     assert(commands.includes('threadbox.moveToProject'), 'Threadbox task move command was not registered.')
     assert(commands.includes('threadbox.restoreFromTrash'), 'Threadbox Trash restore command was not registered.')
     assert(commands.includes('threadbox.emptyTrash'), 'Threadbox Empty Trash command was not registered.')

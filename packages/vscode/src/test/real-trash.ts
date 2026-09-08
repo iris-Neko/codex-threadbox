@@ -10,6 +10,7 @@ import { ProjectStore } from '../project-store'
 import { TrashController } from '../trash-controller'
 import { knownCodexExecutables, LinuxWriterRecovery } from '../linux-writer-recovery'
 import { recoverWriterAndTrash } from '../writer-recovery'
+import { renameThread } from '../rename-thread'
 
 async function run(): Promise<void> {
   const executable = process.argv[2]
@@ -19,7 +20,7 @@ async function run(): Promise<void> {
     ...process.env, CODEX_HOME: directory
   })
   const descriptor = {
-    name: 'threadbox_isolated_trash_smoke', title: 'Threadbox isolated Trash smoke', version: '0.9.6',
+    name: 'threadbox_isolated_trash_smoke', title: 'Threadbox isolated Trash smoke', version: '0.9.7',
     initializeCapabilities: { experimentalApi: true, requestAttestation: false }
   }
   const client = new AppServerClient(runtime, descriptor)
@@ -38,6 +39,8 @@ async function run(): Promise<void> {
     try {
       created = await createProjectThread(creator, project, 'Disposable Trash smoke', directory,
         (id, projectId) => store.assignCreatedThread(id, projectId))
+      await renameThread(client, created.threadId, 'Renamed while open', () => undefined)
+        .catch((error: Error) => { throw new Error('Rename while open: ' + error.message) })
       const locked = await controller.trash([created.threadId])
       assert.deepEqual(locked.succeeded, [], 'A foreign writer must not be bypassed.')
       assert.match(locked.failed[0]?.message ?? '', /already has an active writer/)
@@ -62,9 +65,11 @@ async function run(): Promise<void> {
     const trashed = recovered ?? await controller.trash([created.threadId])
     assert.deepEqual(trashed.succeeded, [created.threadId], JSON.stringify(trashed))
     assert.deepEqual(await store.listTrashRoots(), [created.threadId])
+    await assert.rejects(renameThread(client, created.threadId, 'Renamed in Trash', () => undefined), /Restore archived/)
     const restored = await controller.restore([created.threadId])
     assert.deepEqual(restored.succeeded, [created.threadId], JSON.stringify(restored))
     assert.equal((await store.list()).assignments[created.threadId], project.id)
+    await renameThread(client, created.threadId, 'Renamed after restore', () => undefined)
     await controller.assign([created.threadId], await store.getTrashProjectId())
     const emptied = await controller.empty()
     assert.deepEqual(emptied.succeeded, [created.threadId], JSON.stringify(emptied))
@@ -76,6 +81,7 @@ async function run(): Promise<void> {
       created: true, trashed: true, restored: true, dragToTrash: true, emptied: true,
       foreignWriterProtected: true, retryAfterRelease: true,
       pidfdRecoveryTested: Boolean(recovered),
+      renamedWhileOpen: true, archivedRenameRequiresRestore: true, renamedAfterRestore: true,
       isolatedHome: directory
     }))
   } finally {

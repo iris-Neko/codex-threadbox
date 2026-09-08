@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BatchOperationResult, ThreadboxApi, ThreadRecord } from '../../src/shared/contracts'
 
 const ui = vi.hoisted(() => ({
-  warning: vi.fn(), info: vi.fn(), error: vi.fn(), trusted: true,
+  warning: vi.fn(), info: vi.fn(), error: vi.fn(), input: vi.fn(), trusted: true,
   appendLine: vi.fn(), showLog: vi.fn(), disposeLog: vi.fn(), command: vi.fn()
 }))
 vi.mock('vscode', () => ({
@@ -18,6 +18,7 @@ vi.mock('vscode', () => ({
   workspace: { get isTrusted() { return ui.trusted } },
   window: {
     showWarningMessage: ui.warning, showInformationMessage: ui.info, showErrorMessage: ui.error,
+    showInputBox: ui.input,
     createOutputChannel: () => ({ appendLine: ui.appendLine, show: ui.showLog, dispose: ui.disposeLog })
   },
   commands: { executeCommand: ui.command }
@@ -43,6 +44,7 @@ const environment = {
 }
 function setup(recover?: (ids: string[]) => Promise<BatchOperationResult | null>) {
   const api = {
+    renameThread: vi.fn(async () => undefined),
     trashThreads: vi.fn(async () => result),
     restoreThreadsFromTrash: vi.fn(async () => result),
     emptyTrash: vi.fn(async () => result),
@@ -60,11 +62,30 @@ function setup(recover?: (ids: string[]) => Promise<BatchOperationResult | null>
 beforeEach(() => {
   vi.clearAllMocks()
   ui.trusted = true
+  ui.input.mockResolvedValue(undefined)
   ui.warning.mockResolvedValue('Move to Trash')
   ui.info.mockImplementation(() => new Promise(() => {}))
 })
 
 describe('Sidebar Trash actions', () => {
+  it('renames a task and reloads without waiting for the success notification', async () => {
+    const { api, sidebar, item } = setup()
+    ui.input.mockResolvedValue(' Renamed task ')
+    await sidebar.renameThread(item)
+    expect(api.renameThread).toHaveBeenCalledExactlyOnceWith('ordinary', 'Renamed task')
+    expect(api.listThreads).toHaveBeenCalledOnce()
+    sidebar.dispose()
+  })
+  it('does not rename on cancellation, unchanged input, or loss of workspace trust', async () => {
+    const { api, sidebar, item } = setup()
+    await sidebar.renameThread(item)
+    ui.input.mockResolvedValueOnce(thread.title)
+    await sidebar.renameThread(item)
+    ui.input.mockImplementationOnce(() => { ui.trusted = false; return Promise.resolve('Changed') })
+    await sidebar.renameThread(item)
+    expect(api.renameThread).not.toHaveBeenCalled()
+    sidebar.dispose()
+  })
   it('never offers process recovery for Restore or permanent Empty Trash', async () => {
     const recover = vi.fn(async () => result)
     const { api, sidebar, item } = setup(recover)

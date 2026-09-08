@@ -2,7 +2,7 @@
   "name": "codex-threadbox-vscode",
   "displayName": "Codex Threadbox",
   "description": "Manage Codex tasks locally, including on Remote SSH, Dev Containers, and Codespaces.",
-  "version": "0.9.6",
+  "version": "0.9.7",
   "publisher": "irisNeko",
   "license": "MIT",
   "private": true,
@@ -92,6 +92,12 @@
       {
         "command": "threadbox.renameProject",
         "title": "Rename Project",
+        "category": "Threadbox",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "threadbox.renameThread",
+        "title": "Rename Task...",
         "category": "Threadbox",
         "icon": "$(edit)"
       },
@@ -229,6 +235,11 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "threadbox.renameThread",
+          "when": "view =~ /^threadbox\\.sidebar/ && viewItem =~ /^threadbox\\.thread\\.active\\./",
+          "group": "manage@0"
+        },
         {
           "command": "threadbox.openInCodex",
           "when": "view =~ /^threadbox\\.sidebar/ && viewItem =~ /^threadbox\\.thread\\./",

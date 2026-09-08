@@ -5,6 +5,14 @@ import { parseRpcRequest } from '../../packages/vscode/src/rpc'
 import { requireWorkspaceTrust } from '../../packages/vscode/src/workspace-trust'
 
 describe('VS Code Webview RPC validation', () => {
+  it('allows only a validated task ID and visible name for renaming', () => {
+    const packet = { kind: 'threadbox.request', id: 'rename', method: 'renameThread' }
+    const id = '019f0000-0000-7000-8000-000000000001'
+    expect(parseRpcRequest({ ...packet, args: [id, 'New name'] })).toMatchObject({ method: 'renameThread' })
+    for (const args of [[id, ''], [id, 'bad\nname'], [id, 'x'.repeat(513)], ['../id', 'Name'], [id, 'Name', '/work']]) {
+      expect(parseRpcRequest({ ...packet, args })).toBeNull()
+    }
+  })
   it('does not expose process recovery, PIDs, or signals to Webviews', () => {
     for (const method of ['recoverWriterAndTrash', 'recoverWriter', 'terminate', 'force']) {
       expect(parseRpcRequest({ kind: 'threadbox.request', id: 'blocked', method,

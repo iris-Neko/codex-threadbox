@@ -487,6 +487,10 @@ input[type='checkbox'] {
   width: 124px;
 }
 
+.thread-table--renamable .col-actions {
+  width: 168px;
+}
+
 .thread-table th {
   position: sticky;
   z-index: 2;

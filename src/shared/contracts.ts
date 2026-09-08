@@ -153,6 +153,7 @@ export interface PlatformCapabilities {
   openWorkingDirectory: boolean
   currentWorkspaceDirectories: string[]
   projectThreadCreation?: boolean
+  threadRenaming?: boolean
   taskTrash?: boolean
   workspaceProjectImport?: boolean
   codexCliUpdate?: boolean
@@ -170,6 +171,7 @@ export interface ThreadboxApi {
   getEnvironmentStatus(): Promise<EnvironmentStatus>
   updateCodexCli?(): Promise<EnvironmentStatus>
   listThreads(): Promise<ListThreadsResult>
+  renameThread?(id: string, name: string): Promise<void>
   deleteThreads(ids: string[], options: DeleteThreadsOptions): Promise<BatchOperationResult>
   trashThreads?(ids: string[]): Promise<BatchOperationResult>
   restoreThreadsFromTrash?(ids: string[]): Promise<BatchOperationResult>

@@ -40,6 +40,7 @@ import {
 import { migrateLegacyProjectStorage } from './storage-migration'
 import { TrashController } from './trash-controller'
 import { requireWorkspaceTrust } from './workspace-trust'
+import { renameThread } from './rename-thread'
 import { knownCodexExecutables, LinuxWriterRecovery } from './linux-writer-recovery'
 import { recoverWriterAndTrash } from './writer-recovery'
 
@@ -63,6 +64,7 @@ const SIDEBAR_COMMANDS = {
   importWorkspace: 'threadbox.importCurrentWorkspaceProject',
   newThread: 'threadbox.newThreadInProject',
   renameProject: 'threadbox.renameProject',
+  renameThread: 'threadbox.renameThread',
   deleteProject: 'threadbox.deleteProject',
   moveToProject: 'threadbox.moveToProject',
   archive: 'threadbox.archive',
@@ -340,6 +342,7 @@ function platformCapabilities(): PlatformCapabilities {
     openWorkingDirectory: true,
     currentWorkspaceDirectories,
     projectThreadCreation: true,
+    threadRenaming: true,
     taskTrash: true,
     workspaceProjectImport: currentWorkspaceDirectories.length > 0,
     codexCliUpdate: true
@@ -388,6 +391,10 @@ function createApi(runtime: RuntimeHost, projects: ProjectStore): ThreadboxApi {
         persistPruning: result.inventory.state === 'complete'
       })
       return result
+    },
+    renameThread: async (id, name) => {
+      requireWorkspaceTrust(vscode.workspace.isTrusted)
+      await renameThread(runtime.getClient(), id, name, () => requireWorkspaceTrust(vscode.workspace.isTrusted))
     },
     deleteThreads: async (ids) => {
       requireWorkspaceTrust(vscode.workspace.isTrusted)
@@ -607,7 +614,7 @@ function attachRpc(
       }
     }
     if (['deleteThreads', 'trashThreads', 'restoreThreadsFromTrash', 'emptyTrash',
-      'archiveThreads', 'unarchiveThreads', 'setPinned', 'updateSettings',
+      'archiveThreads', 'unarchiveThreads', 'setPinned', 'updateSettings', 'renameThread',
       'createProject', 'importCurrentWorkspaceProject', 'renameProject', 'deleteProject', 'assignThreads',
       'createThreadInProject', 'updateCodexCli']
       .includes(request.method)) onMutation()
@@ -620,7 +627,7 @@ export interface ThreadboxExtensionApi {
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<ThreadboxExtensionApi> {
-  const version = String(context.extension.packageJSON.version ?? '0.9.6')
+  const version = String(context.extension.packageJSON.version ?? '0.9.7')
   const runtime = new RuntimeHost(version)
   await migrateLegacyProjectStorage(context.globalStorageUri.fsPath)
   const projects = new ProjectStore(join(context.globalStorageUri.fsPath, 'projects-v1.json'))
@@ -736,6 +743,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<Thread
       (item?: SidebarItem) => sidebar.createThread(item)),
     vscode.commands.registerCommand(SIDEBAR_COMMANDS.renameProject,
       (item?: SidebarItem) => sidebar.renameProject(item)),
+    vscode.commands.registerCommand(SIDEBAR_COMMANDS.renameThread,
+      (item?: SidebarItem) => sidebar.renameThread(item)),
     vscode.commands.registerCommand(SIDEBAR_COMMANDS.deleteProject,
       (item?: SidebarItem) => sidebar.deleteProject(item)),
     vscode.commands.registerCommand(SIDEBAR_COMMANDS.moveToProject,

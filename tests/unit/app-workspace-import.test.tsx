@@ -101,6 +101,48 @@ describe('Manager workspace import', () => {
   })
 })
 
+describe('Manager task renaming', () => {
+  const record = (): ThreadRecord => ({
+    id: 'ordinary', title: 'Original name', preview: '', cwd: '/work', projectId: null,
+    createdAt: 1, updatedAt: 2, source: 'vscode', archived: false, pinned: false,
+    status: 'active', parentThreadId: null, descendantCount: 0, internal: false, ineligibleReason: 'active'
+  })
+  it('renames through the host and refreshes the displayed name', async () => {
+    const task = record()
+    const { api } = createApi(false, [task])
+    const caps = await api.getPlatformCapabilities()
+    api.getPlatformCapabilities = async () => ({ ...caps, threadRenaming: true })
+    api.renameThread = vi.fn(async (_id, name) => { task.title = name })
+    render(<App api={api} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Rename task' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Task name' }), { target: { value: 'New name' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Rename' }))
+    await waitFor(() => expect(api.renameThread).toHaveBeenCalledWith('ordinary', 'New name'))
+    await screen.findByText('New name', { selector: '.thread-title' })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+  it('hides renaming for hosts that do not expose the capability', async () => {
+    const { api } = createApi(false, [record()])
+    api.renameThread = vi.fn()
+    render(<App api={api} />)
+    await screen.findByText('Original name')
+    expect(screen.queryByRole('button', { name: 'Rename task' })).not.toBeInTheDocument()
+  })
+  it('keeps the dialog and original title when the host rejects renaming', async () => {
+    const { api } = createApi(false, [record()])
+    const caps = await api.getPlatformCapabilities()
+    api.getPlatformCapabilities = async () => ({ ...caps, threadRenaming: true })
+    api.renameThread = vi.fn(async () => { throw new Error('Rename denied') })
+    render(<App api={api} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Rename task' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Task name' }), { target: { value: 'New name' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Rename' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Rename denied')
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByText('Original name')).toBeInTheDocument()
+  })
+})
+
 describe('Manager task Trash', () => {
   it('shows the actual failure reason and refreshes after a blocked move', async () => {
     const task: ThreadRecord = {

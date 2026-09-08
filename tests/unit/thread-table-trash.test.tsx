@@ -91,6 +91,7 @@ describe('ThreadTable Trash project', () => {
         onArchive={() => undefined}
         onDelete={restore}
         onCreateThread={() => undefined}
+        onRenameThread={() => undefined}
         onRenameProject={() => undefined}
         onDeleteProject={() => undefined}
         onEmptyTrash={empty}
@@ -105,5 +106,7 @@ describe('ThreadTable Trash project', () => {
     expect(screen.queryByRole('button', { name: 'Rename project' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Delete project' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Unarchive' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Rename task' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Rename task' })).toHaveAttribute('title', 'Restore archived or trashed tasks before renaming.')
   })
 })

@@ -44,6 +44,7 @@ interface ThreadTableProps {
   onArchive(thread: ThreadRecord): void
   onDelete(thread: ThreadRecord): void
   onCreateThread(project: ProjectRecord): void
+  onRenameThread?(thread: ThreadRecord): void
   onRenameProject(project: ProjectRecord): void
   onDeleteProject(project: ProjectRecord): void
   onEmptyTrash(project: ProjectRecord): void
@@ -108,6 +109,7 @@ export function ThreadTable({
   onArchive,
   onDelete,
   onCreateThread,
+  onRenameThread,
   onRenameProject,
   onDeleteProject,
   onEmptyTrash
@@ -215,6 +217,16 @@ export function ThreadTable({
         </td>
         <td>
           <div className="row-actions">
+            {onRenameThread && <button
+              className="icon-button icon-button--small"
+              type="button"
+              title={thread.archived || inTrash ? t('renameAfterRestore') : t('renameThread')}
+              aria-label={t('renameThread')}
+              disabled={threadMutationDisabled || projectMutationDisabled || !matchesFilter || thread.archived || inTrash}
+              onClick={() => onRenameThread(thread)}
+            >
+              <Pencil size={15} aria-hidden="true" />
+            </button>}
             {allowOpenDirectory && <button
               className="icon-button icon-button--small"
               type="button"
@@ -401,7 +413,7 @@ export function ThreadTable({
 
   return (
     <div className="table-scroll">
-      <table className="thread-table">
+      <table className={onRenameThread ? 'thread-table thread-table--renamable' : 'thread-table'}>
         <colgroup>
           <col className="col-select" />
           <col className="col-thread" />

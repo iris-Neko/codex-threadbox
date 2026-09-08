@@ -53,6 +53,7 @@ const api: ThreadboxApi = {
   getEnvironmentStatus: () => invoke('getEnvironmentStatus'),
   updateCodexCli: () => invoke('updateCodexCli'),
   listThreads: () => invoke('listThreads'),
+  renameThread: (id, name) => invoke('renameThread', id, name),
   deleteThreads: (ids: string[], options: DeleteThreadsOptions) =>
     invoke('deleteThreads', ids, options),
   trashThreads: (ids) => invoke('trashThreads', ids),

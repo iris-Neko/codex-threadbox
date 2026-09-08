@@ -10,6 +10,10 @@ The built-in **Trash** project works for every task. Moving a task to Trash arch
 
 Codex CLI 0.153.3 or newer is required. This release validates the two latest stable versions, 0.153.3 and 0.153.4, including the complete create/Trash/restore/empty lifecycle in isolated data. Older CLIs must be upgraded with the install/update action. A missing CLI can be installed for the current user with OpenAI's official standalone installer; Threadbox verifies the exact executable before saving its machine-scoped path. Older CLIs still run the official `codex update` command. A system npm install that fails with `EACCES` or `EPERM` offers a visible remote-terminal `sudo` update as the preferred single-installation fix, plus a user-level fallback. After that fallback succeeds, Threadbox prompts to uninstall the old system copy instead of silently leaving two ambiguous Codex commands. Configure `threadbox.codexBinary` or `threadbox.codexHome` when the CLI does not use the default environment. All install and update actions run on the Remote SSH, Dev Container, or Codespaces extension host, never on the local UI host.
 
+### Rename a task
+
+Right-click an active task and choose **Rename Task**, or use its pencil button in the Manager. Threadbox updates the actual Codex name through the official API, verifies the saved name, and refreshes the list. Renaming does not start/resume a conversation, send a message, stop a backend, or change project assignments. Names must contain 1-512 characters with no control characters. The supported CLI versions require archived or trashed tasks to be restored before renaming; the UI makes this limitation explicit.
+
 ### Recover a blocked Move to Trash
 
 On Linux extension hosts, a writer-lock notification also offers **Release Writer and Retry**. This requires Python 3.9+ and Linux pidfd support. Threadbox checks that the lock belongs to a known Codex App Server running as the current user, then shows its PID, executable, and known affected tasks. Stopping that backend can interrupt ALL sessions it serves; the list of writer locks may not cover every background activity. Codex may need to reconnect or reload afterwards.

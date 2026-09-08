@@ -1,4 +1,5 @@
 import type { ThreadboxApi } from '../../../src/shared/contracts'
+import { normalizeThreadName, validThreadId } from '../../../src/shared/thread-name'
 
 export type RpcMethod = keyof ThreadboxApi
 
@@ -22,6 +23,7 @@ const METHODS = new Set<RpcMethod>([
   'getEnvironmentStatus',
   'updateCodexCli',
   'listThreads',
+  'renameThread',
   'deleteThreads',
   'trashThreads',
   'restoreThreadsFromTrash',
@@ -67,6 +69,10 @@ function isProjectId(value: unknown): value is string {
 }
 
 function validArgs(method: RpcMethod, args: unknown[]): boolean {
+  if (method === 'renameThread') {
+    if (args.length !== 2 || !validThreadId(args[0])) return false
+    try { normalizeThreadName(args[1]); return true } catch { return false }
+  }
   if (['getPlatformCapabilities', 'getEnvironmentStatus', 'updateCodexCli', 'listThreads', 'repairDesktopRecents',
     'chooseCliPath', 'getSettings', 'listProjects', 'emptyTrash',
     'importCurrentWorkspaceProject'].includes(method)) return args.length === 0

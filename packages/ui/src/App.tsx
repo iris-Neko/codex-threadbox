@@ -39,6 +39,7 @@ import type {
 } from '../../../src/shared/contracts'
 import { DeleteDialog } from './components/DeleteDialog'
 import { CreateThreadDialog } from './components/CreateThreadDialog'
+import { RenameThreadDialog } from './components/RenameThreadDialog'
 import { ProjectDialog } from './components/ProjectDialog'
 import { RecentsRepairDialog } from './components/RecentsRepairDialog'
 import { SettingsDialog } from './components/SettingsDialog'
@@ -147,6 +148,7 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
   const [recentsRepairOpen, setRecentsRepairOpen] = useState(false)
   const [projectDialog, setProjectDialog] = useState<ProjectRecord | 'new' | null>(null)
   const [threadProject, setThreadProject] = useState<ProjectRecord | null>(null)
+  const [renamingThread, setRenamingThread] = useState<ThreadRecord | null>(null)
 
   const refresh = useCallback(async (): Promise<void> => {
     setLoading(true)
@@ -945,6 +947,7 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
               }
             }}
             onCreateThread={(project) => setThreadProject(project)}
+            onRenameThread={platform.threadRenaming && api.renameThread ? setRenamingThread : undefined}
             onRenameProject={(project) => setProjectDialog(project)}
             onDeleteProject={(project) => {
               if (window.confirm(t('deleteProjectConfirm', { name: project.name }))) {
@@ -996,6 +999,24 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
               : api.renameProject(projectDialog.id, name),
             true
           )}
+        />
+      )}
+
+      {renamingThread && api.renameThread && (
+        <RenameThreadDialog
+          key={renamingThread.id}
+          initialName={renamingThread.title}
+          busy={busy}
+          onClose={() => setRenamingThread(null)}
+          onSubmit={async (name) => {
+            setBusy(true)
+            try {
+              await api.renameThread!(renamingThread.id, name)
+              await refresh()
+              setRenamingThread(null)
+              setNotice(t('threadRenamed'))
+            } finally { setBusy(false) }
+          }}
         />
       )}
 

@@ -21,6 +21,7 @@ import {
 } from './sidebar-selection'
 import { batchNotice, ProjectAssignmentError } from './operation-feedback'
 import { requireWorkspaceTrust } from './workspace-trust'
+import { normalizeThreadName } from '../../../src/shared/thread-name'
 
 const SETTINGS_COMMAND = 'workbench.action.openSettings'
 const TREE_MIME = 'application/vnd.code.tree.threadbox.sidebar'
@@ -328,6 +329,35 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
     if (!name?.trim() || name.trim() === project.name) return
     try { this.updateSnapshot(await this.api.renameProject(project.id, name)); this.redraw() }
     catch (error) { await this.showError(error) }
+  }
+
+  async renameThread(item?: SidebarItem): Promise<void> {
+    if (!item?.thread || !this.api.renameThread) return
+    try {
+      requireWorkspaceTrust(vscode.workspace.isTrusted)
+      const chinese = this.locale.toLowerCase().startsWith('zh')
+      if (item.thread.archived || item.contextValue?.startsWith('threadbox.thread.trash.')) {
+        void vscode.window.showWarningMessage(chinese
+          ? '请先恢复归档或垃圾箱中的对话，再重命名。' : 'Restore archived or trashed tasks before renaming.')
+        return
+      }
+      const value = await vscode.window.showInputBox({
+        prompt: chinese ? '重命名对话' : 'Rename task',
+        value: item.thread.title, valueSelection: [0, item.thread.title.length],
+        validateInput: (name) => {
+          try { normalizeThreadName(name); return null } catch {
+            return chinese ? '请输入 1-512 个可见字符。' : 'Enter 1-512 visible characters.'
+          }
+        }
+      })
+      if (value === undefined) return
+      const name = normalizeThreadName(value)
+      if (name === item.thread.title) return
+      requireWorkspaceTrust(vscode.workspace.isTrusted)
+      await this.api.renameThread(item.thread.id, name)
+      await this.refreshNow()
+      void vscode.window.showInformationMessage(chinese ? '对话名称已更新。' : 'Task renamed.')
+    } catch (error) { await this.showError(error) }
   }
 
   async deleteProject(item?: SidebarItem): Promise<void> {
