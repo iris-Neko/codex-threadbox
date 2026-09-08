@@ -43,7 +43,7 @@ class FakeThreadService {
     return {
       threads: this.threads.map((thread) => ({ ...thread })),
       environment: {
-        state: 'ready', cliPath: '/codex', cliVersion: '0.150.1', minimumVersion: '0.150.0',
+        state: 'ready', cliPath: '/codex', cliVersion: '0.153.4', minimumVersion: '0.153.3',
         message: null, externalCodexProcesses: 0, capabilities: { pinning: true }
       },
       inventory: { state: 'complete', message: null },
@@ -110,6 +110,49 @@ afterEach(async () => {
 })
 
 describe('VS Code Trash controller', () => {
+  it('reports blocked drag-to-Trash instead of returning a success-shaped snapshot', async () => {
+    const { controller, service, store } = await setup([record('pinned', { pinned: true })])
+    await expect(controller.assign(['pinned'], await store.getTrashProjectId()))
+      .rejects.toThrow(/pinned.*protected/)
+    expect(service.calls.archive).toEqual([])
+    expect((await store.list()).assignments).toEqual({})
+  })
+
+  it('keeps partial successes and reports the blocked tasks during drag-to-Trash', async () => {
+    const { controller, store } = await setup([record('ok'), record('pinned', { pinned: true })])
+    const trashId = await store.getTrashProjectId()
+    await expect(controller.assign(['ok', 'pinned'], trashId)).rejects.toThrow(/1 succeeded/)
+    expect((await store.list()).assignments).toEqual({ ok: trashId })
+  })
+
+  it('does not lose a failed restore when moving out of Trash', async () => {
+    const { controller, service, store } = await setup([record('root')])
+    await controller.trash(['root'])
+    vi.spyOn(service, 'unarchiveThreads').mockResolvedValueOnce({
+      ...result([]), failed: [{ id: 'root', message: 'no rollout found' }]
+    })
+    await expect(controller.assign(['root'], null)).rejects.toThrow(/root.*no rollout found/)
+    expect(await store.listTrashRoots()).toEqual(['root'])
+  })
+
+  it('checks the root when trashing a child of a protected parent', async () => {
+    const { controller, service, store } = await setup([
+      record('root', { pinned: true }), record('child', { parentThreadId: 'root' })
+    ])
+    const moved = await controller.trash(['child'])
+    expect(moved.succeeded).toEqual([])
+    expect(moved.skipped.map((item) => item.id)).toEqual(['root'])
+    expect(service.calls.archive).toEqual([])
+    expect((await store.list()).assignments).toEqual({})
+  })
+
+  it('archives the root, not just the child, before moving the root assignment', async () => {
+    const { controller, service } = await setup([
+      record('root'), record('child', { parentThreadId: 'root' })
+    ])
+    expect((await controller.trash(['child'])).succeeded).toEqual(['root'])
+    expect(service.calls.archive).toEqual([['root']])
+  })
   it('archives tasks into Trash and restores their previous project', async () => {
     const task = record('root')
     const { controller, service, store } = await setup([task])

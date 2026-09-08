@@ -1,15 +1,31 @@
 const readline = require('node:readline')
-const { appendFileSync, readFileSync, writeFileSync } = require('node:fs')
+const { appendFileSync, readFileSync, writeFileSync, mkdirSync } = require('node:fs')
+const { join } = require('node:path')
 
 function fakeVersion() {
   if (process.env.THREADBOX_FAKE_VERSION_FILE) {
     return readFileSync(process.env.THREADBOX_FAKE_VERSION_FILE, 'utf8').trim()
   }
-  return process.env.THREADBOX_FAKE_VERSION || '0.150.1'
+  return process.env.THREADBOX_FAKE_VERSION || '0.153.4'
 }
 
 if (process.argv.includes('--version')) {
   process.stdout.write(`codex-cli ${fakeVersion()}\n`)
+  process.exit(0)
+}
+
+if (process.argv.includes('generate-json-schema')) {
+  log({ event: 'schema-probe' })
+  if (process.env.THREADBOX_FAKE_SCHEMA_FAIL === '1') process.exit(7)
+  const output = join(process.argv[process.argv.indexOf('--out') + 1], 'v2')
+  mkdirSync(output, { recursive: true })
+  const pin = process.env.THREADBOX_FAKE_PINNING === '0' ? {} : { isPinned: { type: 'boolean' } }
+  writeFileSync(join(output, 'ThreadListParams.json'), JSON.stringify({
+    type: 'object', properties: { limit: { type: 'integer' }, ...pin }
+  }))
+  writeFileSync(join(output, 'ThreadMetadataUpdateParams.json'), JSON.stringify({
+    type: 'object', properties: { threadId: { type: 'string' }, ...pin }
+  }))
   process.exit(0)
 }
 
@@ -30,7 +46,7 @@ if (process.argv.includes('update')) {
       process.exit(9)
     }
     if (process.env.THREADBOX_FAKE_VERSION_FILE) {
-      writeFileSync(process.env.THREADBOX_FAKE_VERSION_FILE, '0.150.1\n', 'utf8')
+      writeFileSync(process.env.THREADBOX_FAKE_VERSION_FILE, '0.153.4\n', 'utf8')
     }
     process.stdout.write('fake Codex update completed\n')
     process.exit(0)
@@ -73,7 +89,7 @@ const active = [
     status: { type: 'notLoaded' },
     path: null,
     cwd: demoDirectory,
-    cliVersion: '0.150.1',
+    cliVersion: '0.153.4',
     source: 'vscode',
     threadSource: null,
     agentNickname: null,
@@ -99,7 +115,7 @@ const active = [
     status: { type: 'notLoaded' },
     path: null,
     cwd: demoDirectory,
-    cliVersion: '0.150.1',
+    cliVersion: '0.153.4',
     source: { subAgent: { thread_spawn: { parent_thread_id: 'parent', depth: 1 } } },
     threadSource: null,
     agentNickname: null,
@@ -125,7 +141,7 @@ const active = [
     status: { type: 'notLoaded' },
     path: null,
     cwd: projectDirectory,
-    cliVersion: '0.150.1',
+    cliVersion: '0.153.4',
     source: 'appServer',
     threadSource: null,
     agentNickname: null,
@@ -225,7 +241,8 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
     send({
       id: message.id,
       result: {
-        data: message.params.isPinned ? [] : message.params.archived ? archived : activeData,
+        data: message.params.isPinned && process.env.THREADBOX_FAKE_PINNING !== '0'
+          ? [] : message.params.archived ? archived : activeData,
         nextCursor: null,
         backwardsCursor: null
       }

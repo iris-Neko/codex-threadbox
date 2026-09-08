@@ -18,8 +18,8 @@ afterEach(() => {
 const environment: EnvironmentStatus = {
   state: 'ready',
   cliPath: 'codex',
-  cliVersion: '0.150.1',
-  minimumVersion: '0.150.0',
+  cliVersion: '0.153.4',
+  minimumVersion: '0.153.3',
   message: null,
   externalCodexProcesses: 0,
   capabilities: { pinning: false }
@@ -102,6 +102,23 @@ describe('Manager workspace import', () => {
 })
 
 describe('Manager task Trash', () => {
+  it('shows the actual failure reason and refreshes after a blocked move', async () => {
+    const task: ThreadRecord = {
+      id: 'ordinary', title: 'Ordinary task', preview: '', cwd: '/work',
+      projectId: null, createdAt: 1, updatedAt: 2, source: 'vscode', archived: false,
+      pinned: false, status: 'notLoaded', parentThreadId: null, descendantCount: 0,
+      internal: false, ineligibleReason: null
+    }
+    const { api, trash } = createApi(false, [task])
+    trash.mockResolvedValueOnce({
+      ...batch, skipped: [{ id: task.id, message: 'Pinned threads must be unpinned before deletion.' }]
+    })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<App api={api} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Move to Trash' }))
+    await screen.findByText(/ordinary: Pinned threads must be unpinned/)
+    await waitFor(() => expect(api.listThreads).toHaveBeenCalledTimes(2))
+  })
   it('revalidates stale active status in the host instead of blocking deletion in the UI', async () => {
     const staleActive: ThreadRecord = {
       id: 'stale-active', title: 'Stale Windows task', preview: '', cwd: 'C:\\work',

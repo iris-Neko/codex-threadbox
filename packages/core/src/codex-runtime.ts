@@ -1,12 +1,14 @@
 import spawn from 'cross-spawn'
 import type { ChildProcess, SpawnOptions } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { delimiter, extname, isAbsolute, join } from 'node:path'
 import semver from 'semver'
 import type { EnvironmentStatus } from '../../../src/shared/contracts'
+import { pinningFromSchemas } from './codex-capabilities'
 
-export const MINIMUM_CODEX_VERSION = '0.150.0'
-const PINNING_VERSION = '0.150.0'
+export const MINIMUM_CODEX_VERSION = '0.153.3'
 const PROBE_TTL_MS = 10_000
 
 export interface RuntimeProbe {
@@ -37,7 +39,8 @@ function capture(
   command: string,
   args: string[],
   timeoutMs = 8_000,
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
+  operation = 'Codex CLI version check'
 ): Promise<CapturedProcess> {
   return new Promise((resolve, reject) => {
     const child = launch(command, args, {
@@ -56,7 +59,7 @@ function capture(
     }
     const timer = setTimeout(() => {
       child.kill()
-      finish(() => reject(new Error('The Codex CLI version check timed out.')))
+      finish(() => reject(new Error('The ' + operation + ' timed out.')))
     }, timeoutMs)
 
     child.stdout?.on('data', (chunk: Buffer) => {
@@ -137,7 +140,7 @@ function readyStatus(command: string, version: string, externalCodexProcesses: n
       : `Codex CLI ${MINIMUM_CODEX_VERSION} or newer is required.`,
     externalCodexProcesses,
     capabilities: {
-      pinning: semver.gte(version, PINNING_VERSION)
+      pinning: false
     }
   }
 }
@@ -145,6 +148,7 @@ function readyStatus(command: string, version: string, externalCodexProcesses: n
 export class CodexRuntime implements CodexRuntimeLike {
   private cached: { at: number; probe: RuntimeProbe } | null = null
   private readonly ownedProcessIds = new Set<number>()
+  private readonly pinningProbes = new Map<string, Promise<boolean>>()
 
   constructor(
     private readonly settings: { load(): Promise<{ customCliPath: string | null }> },
@@ -172,6 +176,16 @@ export class CodexRuntime implements CodexRuntimeLike {
         const version = parseCodexVersion(`${result.stdout}\n${result.stderr}`)
         if (result.code === 0 && version) {
           const probe = { command, status: readyStatus(command, version, externalCodexProcesses) }
+          if (probe.status.state === 'ready') {
+            try {
+              probe.status.capabilities.pinning = await this.probePinning(command, version)
+            } catch (error) {
+              probe.status.state = 'error'
+              probe.status.message = 'Could not verify Codex task safety capabilities: ' +
+                (error instanceof Error ? error.message : String(error)) +
+                ' Retry or choose a compatible Codex CLI.'
+            }
+          }
           this.cached = { at: Date.now(), probe }
           return probe
         }
@@ -207,6 +221,36 @@ export class CodexRuntime implements CodexRuntimeLike {
 
   invalidate(): void {
     this.cached = null
+    this.pinningProbes.clear()
+  }
+
+  private probePinning(command: string, version: string): Promise<boolean> {
+    const key = JSON.stringify([command, version])
+    const cached = this.pinningProbes.get(key)
+    if (cached) return cached
+    const pending = this.readPinningSchemas(command).catch((error: unknown) => {
+      this.pinningProbes.delete(key)
+      throw error
+    })
+    this.pinningProbes.set(key, pending)
+    return pending
+  }
+
+  private async readPinningSchemas(command: string): Promise<boolean> {
+    const directory = await mkdtemp(join(tmpdir(), 'threadbox-capabilities-'))
+    try {
+      const output = join(directory, 'schema')
+      const result = await capture(command,
+        ['app-server', 'generate-json-schema', '--out', output], 8_000,
+        { ...this.env, CODEX_HOME: directory }, 'Codex API capability check')
+      if (result.code !== 0) throw new Error('API schema generation exited with code ' + result.code + '.')
+      return pinningFromSchemas(
+        JSON.parse(await readFile(join(output, 'v2', 'ThreadListParams.json'), 'utf8')),
+        JSON.parse(await readFile(join(output, 'v2', 'ThreadMetadataUpdateParams.json'), 'utf8'))
+      )
+    } finally {
+      await rm(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+    }
   }
 
   spawnAppServer(command: string): ChildProcess {

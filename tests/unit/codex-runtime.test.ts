@@ -1,9 +1,11 @@
 // @vitest-environment node
 
-import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { delimiter, join } from 'node:path'
+import { delimiter, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { AppServerClient } from '../../packages/core/src/app-server-client'
+import { ThreadService } from '../../packages/core/src/thread-service'
 import {
   CodexRuntime,
   parseCodexVersion,
@@ -26,27 +28,20 @@ async function temporaryDirectory(prefix: string): Promise<string> {
   return directory
 }
 
-async function writeFakeCli(directory: string, valid: boolean): Promise<string> {
+async function writeFakeCli(directory: string, valid: boolean, version = '0.153.4'): Promise<string> {
   await mkdir(directory, { recursive: true })
-  if (process.platform === 'win32') {
-    const command = join(directory, 'codex.cmd')
-    await writeFile(
-      command,
-      valid
-        ? '@echo off\r\necho codex-cli 0.150.1\r\n'
-        : '@echo off\r\necho broken 1>&2\r\nexit /b 1\r\n',
-      'utf8'
-    )
-    return command
-  }
-
-  const command = join(directory, 'codex')
-  await writeFile(
-    command,
-    valid ? '#!/bin/sh\nprintf "codex-cli 0.150.1\\n"\n' : '#!/bin/sh\nexit 1\n',
-    'utf8'
-  )
-  await chmod(command, 0o755)
+  const windows = process.platform === 'win32'
+  const command = join(directory, windows ? 'codex.cmd' : 'codex')
+  const fixture = resolve('tests/fixtures/fake-codex-cli.cjs')
+  const body = !valid
+    ? windows ? '@echo off\r\nexit /b 1\r\n' : '#!/bin/sh\nexit 1\n'
+    : windows
+      ? '@echo off\r\nif "%~1"=="--version" (\r\necho codex-cli ' + version +
+        '\r\nexit /b 0\r\n)\r\n"' + process.execPath + '" "' + fixture + '" %*\r\n'
+      : '#!/bin/sh\nif [ "$1" = "--version" ]; then echo codex-cli ' + version +
+        '; exit 0; fi\nexec "' + process.execPath + '" "' + fixture + '" "$@"\n'
+  await writeFile(command, body, 'utf8')
+  if (!windows) await chmod(command, 0o755)
   return command
 }
 
@@ -63,10 +58,68 @@ afterEach(async () => {
 })
 
 describe('CodexRuntime', () => {
+  it('caches detected schemas across forced probes and invalidates them explicitly', async () => {
+    const root = await temporaryDirectory('threadbox-capability-cache-')
+    const command = await writeFakeCli(root, true)
+    const log = join(root, 'requests.jsonl')
+    process.env.THREADBOX_TEST_DISABLE_PROCESS_SCAN = '1'
+    const runtime = new CodexRuntime({ load: async () => ({ customCliPath: command }) }, {
+      ...process.env, CODEX_HOME: root, THREADBOX_FAKE_LOG: log
+    })
+    expect((await runtime.probe()).status.capabilities.pinning).toBe(true)
+    await runtime.probe(true)
+    expect((await readFile(log, 'utf8')).trim().split(/\r?\n/)).toHaveLength(1)
+    runtime.invalidate()
+    await runtime.probe(true)
+    expect((await readFile(log, 'utf8')).trim().split(/\r?\n/)).toHaveLength(2)
+  })
+
+  it('does not infer pins from an unsupported filter that silently returns all tasks', async () => {
+    const root = await temporaryDirectory('threadbox-no-pinning-')
+    const command = await writeFakeCli(root, true, '0.153.4')
+    const log = join(root, 'requests.jsonl')
+    process.env.THREADBOX_TEST_DISABLE_PROCESS_SCAN = '1'
+    const runtime = new CodexRuntime({ load: async () => ({ customCliPath: command }) }, {
+      ...process.env, CODEX_HOME: root, THREADBOX_FAKE_LOG: log, THREADBOX_FAKE_PINNING: '0'
+    })
+    const client = new AppServerClient(runtime, { name: 'threadbox_test', title: 'Test', version: '0' })
+    try {
+      const service = new ThreadService(client)
+      const listed = await service.listThreads()
+      expect(listed.environment.capabilities.pinning).toBe(false)
+      expect(listed.threads).toHaveLength(4)
+      expect(listed.threads.every((thread) => !thread.pinned)).toBe(true)
+      const id = listed.threads.find((thread) => !thread.parentThreadId)!.id
+      expect((await service.previewDeleteThreads([id])).roots).toHaveLength(1)
+      expect((await service.setPinned([id], false)).failed).toHaveLength(1)
+      const requests = (await readFile(log, 'utf8')).trim().split(/\r?\n/)
+        .map((line) => JSON.parse(line))
+      expect(requests.some((r) => r.method === 'thread/metadata/update')).toBe(false)
+      expect(requests.some((r) => r.method === 'thread/list' && 'isPinned' in r.params)).toBe(false)
+    } finally { client.stop() }
+  })
+
+  it('blocks task operations when schemas cannot be verified, and retries after recovery', async () => {
+    const root = await temporaryDirectory('threadbox-capability-failure-')
+    const command = await writeFakeCli(root, true)
+    const env = { ...process.env, CODEX_HOME: root, THREADBOX_FAKE_SCHEMA_FAIL: '1' }
+    process.env.THREADBOX_TEST_DISABLE_PROCESS_SCAN = '1'
+    const runtime = new CodexRuntime({ load: async () => ({ customCliPath: command }) }, env)
+    expect((await runtime.probe()).status).toMatchObject({
+      state: 'error', message: expect.stringContaining('Could not verify Codex task safety')
+    })
+    const client = new AppServerClient(runtime, { name: 'threadbox_test', title: 'Test', version: '0' })
+    try {
+      await expect(client.request('thread/delete', { threadId: 'never-sent' }))
+        .rejects.toThrow(/Could not verify/)
+      env.THREADBOX_FAKE_SCHEMA_FAIL = '0'
+      expect((await runtime.probe(true)).status.state).toBe('ready')
+    } finally { client.stop() }
+  })
   it('parses stable and prerelease Codex version output', () => {
-    expect(parseCodexVersion('codex-cli 0.150.0')).toBe('0.150.0')
-    expect(parseCodexVersion('codex-cli v0.150.0-alpha.1+build.2')).toBe(
-      '0.150.0-alpha.1+build.2'
+    expect(parseCodexVersion('codex-cli 0.153.3')).toBe('0.153.3')
+    expect(parseCodexVersion('codex-cli v0.153.3-alpha.1+build.2')).toBe(
+      '0.153.3-alpha.1+build.2'
     )
     expect(parseCodexVersion('not a version')).toBeNull()
   })
@@ -90,24 +143,16 @@ describe('CodexRuntime', () => {
     const probe = await runtime.probe(true)
 
     expect(probe.command).toBe(validCommand)
-    expect(probe.status).toMatchObject({ state: 'ready', cliVersion: '0.150.1' })
+    expect(probe.status).toMatchObject({ state: 'ready', cliVersion: '0.153.4' })
   })
 
   it.each([
-    ['0.150.0', 'ready'],
-    ['0.150.1', 'ready'],
-    ['0.149.1', 'outdated']
+    ['0.153.3', 'ready'],
+    ['0.153.4', 'ready'],
+    ['0.153.2', 'outdated']
   ] as const)('classifies Codex CLI %s as %s', async (version, state) => {
     const root = await temporaryDirectory('threadbox-runtime-version-')
-    const command = process.platform === 'win32' ? join(root, 'codex.cmd') : join(root, 'codex')
-    await writeFile(
-      command,
-      process.platform === 'win32'
-        ? `@echo off\r\necho codex-cli ${version}\r\n`
-        : `#!/bin/sh\nprintf "codex-cli ${version}\\n"\n`,
-      'utf8'
-    )
-    if (process.platform !== 'win32') await chmod(command, 0o755)
+    const command = await writeFakeCli(root, true, version)
 
     process.env.CODEX_BINARY = command
     process.env.THREADBOX_TEST_DISABLE_PROCESS_SCAN = '1'
@@ -118,7 +163,7 @@ describe('CodexRuntime', () => {
     expect(probe.status).toMatchObject({
       state,
       cliVersion: version,
-      minimumVersion: '0.150.0'
+      minimumVersion: '0.153.3'
     })
   })
 

@@ -14,16 +14,16 @@ afterEach(cleanup)
 const outdated: EnvironmentStatus = {
   state: 'outdated',
   cliPath: 'codex',
-  cliVersion: '0.149.1',
-  minimumVersion: '0.150.0',
-  message: 'Codex CLI 0.150.0 or newer is required.',
+  cliVersion: '0.153.2',
+  minimumVersion: '0.153.3',
+  message: 'Codex CLI 0.153.3 or newer is required.',
   externalCodexProcesses: 0,
   capabilities: { pinning: false }
 }
 const ready: EnvironmentStatus = {
   ...outdated,
   state: 'ready',
-  cliVersion: '0.150.1',
+  cliVersion: '0.153.4',
   message: null,
   capabilities: { pinning: true }
 }
@@ -90,7 +90,7 @@ describe('Manager Codex CLI update', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Update Codex CLI' }))
     await waitFor(() => expect(update).toHaveBeenCalledOnce())
-    expect(await screen.findByText('Codex CLI updated to 0.150.1.')).toBeInTheDocument()
+    expect(await screen.findByText('Codex CLI updated to 0.153.4.')).toBeInTheDocument()
   })
 
   it('installs a missing CLI for the current user and refreshes the manager', async () => {
@@ -100,7 +100,7 @@ describe('Manager Codex CLI update', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Install Codex CLI' }))
     await waitFor(() => expect(update).toHaveBeenCalledOnce())
     expect(await screen.findByText(
-      'Codex CLI 0.150.1 installed for the current user.'
+      'Codex CLI 0.153.4 installed for the current user.'
     )).toBeInTheDocument()
   })
 

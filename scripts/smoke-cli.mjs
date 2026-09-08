@@ -31,7 +31,7 @@ function parsed(result) {
 
 try {
   const status = run(['status'])
-  if (status.status !== 0 || parsed(status).environment.cliVersion !== '0.150.1') {
+  if (status.status !== 0 || parsed(status).environment.cliVersion !== '0.153.4') {
     throw new Error(`CLI status smoke failed: ${status.stdout}\n${status.stderr}`)
   }
 

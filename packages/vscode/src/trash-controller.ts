@@ -7,12 +7,13 @@ import type {
   ProjectSnapshot
 } from '../../../src/shared/contracts'
 import type { ProjectStore } from './project-store'
+import { ProjectAssignmentError } from './operation-feedback'
 
 interface TrashThreadService {
   setSupplementalThreadReferences?(references: readonly { id: string; archived: boolean }[]): void
   listThreads(): Promise<ListThreadsResult>
   previewDeleteThreads(ids: string[]): Promise<DeletePreview>
-  archiveThreads(ids: string[]): Promise<BatchOperationResult>
+  archiveThreads(ids: string[], options?: { protectDescendants?: boolean }): Promise<BatchOperationResult>
   unarchiveThreads(ids: string[]): Promise<BatchOperationResult>
   deleteThreads(ids: string[], options: DeleteThreadsOptions): Promise<BatchOperationResult>
 }
@@ -56,17 +57,20 @@ export class TrashController {
 
   async trash(ids: string[]): Promise<BatchOperationResult> {
     await this.prepareService()
-    const preview = await this.service.previewDeleteThreads(ids)
     const listed = await this.service.listThreads()
     await this.projects.setInventory(listed.threads)
     const byId = new Map(listed.threads.map((thread) => [thread.id, thread]))
+    const knownIds = ids.filter((id) => byId.has(id))
+    const preview = await this.service.previewDeleteThreads([
+      ...this.projects.resolveRootIds(knownIds), ...ids.filter((id) => !byId.has(id))
+    ])
     const roots = preview.roots.map((root) => root.id)
     const alreadyTrashed = new Set(await this.projects.filterTrashRoots(roots))
     const candidates = roots.filter((id) => !alreadyTrashed.has(id))
     const alreadyArchived = candidates.filter((id) => byId.get(id)?.archived)
     const toArchive = candidates.filter((id) => !byId.get(id)?.archived)
     const archived = toArchive.length > 0
-      ? await this.service.archiveThreads(toArchive)
+      ? await this.service.archiveThreads(toArchive, { protectDescendants: true })
       : emptyResult()
     const moved = unique([...alreadyArchived, ...archived.succeeded])
 
@@ -160,16 +164,20 @@ export class TrashController {
     await this.projects.setInventory(listed.threads)
     const trashId = await this.projects.getTrashProjectId()
     if (projectId === trashId) {
-      await this.trash(ids)
+      const result = await this.trash(ids)
+      if (result.failed.length > 0 || result.skipped.length > 0) throw new ProjectAssignmentError(result)
       return this.projects.list()
     }
 
     const roots = this.projects.resolveRootIds(ids)
     const trashed = await this.projects.filterTrashRoots(roots)
-    if (trashed.length > 0) await this.restore(trashed, projectId)
+    const restored = trashed.length > 0 ? await this.restore(trashed, projectId) : emptyResult()
     const trashedSet = new Set(trashed)
     const ordinary = roots.filter((id) => !trashedSet.has(id))
     if (ordinary.length > 0) await this.projects.assign(ordinary, projectId)
+    if (restored.failed.length > 0 || restored.skipped.length > 0) {
+      throw new ProjectAssignmentError({ ...restored, succeeded: [...restored.succeeded, ...ordinary] })
+    }
     return this.projects.list()
   }
 

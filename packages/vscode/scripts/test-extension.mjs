@@ -32,6 +32,7 @@ try {
   process.env.THREADBOX_FAKE_WORKSPACE = workspace
   process.env.THREADBOX_FAKE_LOG = fakeLog
   process.env.THREADBOX_FAKE_CREATED_FILE = fakeCreatedFile
+  process.env.THREADBOX_FAKE_PINNING = '0'
   await runTests({
     vscodeExecutablePath,
     extensionDevelopmentPath: packageRoot,
@@ -80,6 +81,7 @@ try {
   delete process.env.THREADBOX_FAKE_WORKSPACE
   delete process.env.THREADBOX_FAKE_LOG
   delete process.env.THREADBOX_FAKE_CREATED_FILE
+  delete process.env.THREADBOX_FAKE_PINNING
   await rm(workspace, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   await rm(installation, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 }

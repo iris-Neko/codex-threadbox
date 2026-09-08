@@ -100,22 +100,22 @@ describe('VS Code Codex CLI update', () => {
     const updater = new CodexCliUpdater()
 
     await expect(updater.installStandalone(
-      { ...process.env, THREADBOX_FAKE_VERSION: '0.150.1' },
+      { ...process.env, THREADBOX_FAKE_VERSION: '0.153.4' },
       5_000,
       { command: fakeCli, args: ['--version'] },
       fakeCli
-    )).resolves.toMatchObject({ path: fakeCli, version: '0.150.1' })
+    )).resolves.toMatchObject({ path: fakeCli, version: '0.153.4' })
   })
 
   it('rejects a standalone executable that remains below the minimum version', async () => {
     const updater = new CodexCliUpdater()
 
     await expect(updater.installStandalone(
-      { ...process.env, THREADBOX_FAKE_VERSION: '0.149.1' },
+      { ...process.env, THREADBOX_FAKE_VERSION: '0.153.2' },
       5_000,
       { command: fakeCli, args: ['--version'] },
       fakeCli
-    )).rejects.toThrow('did not report version 0.150.0 or newer')
+    )).rejects.toThrow('did not report version 0.153.3 or newer')
   })
 
   it('surfaces standalone installer failures without probing or changing a CLI', async () => {

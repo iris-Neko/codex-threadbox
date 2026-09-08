@@ -258,7 +258,21 @@ export class ThreadService {
     return (await this.prepareDelete(ids)).preview
   }
 
-  async archiveThreads(ids: string[]): Promise<BatchOperationResult> {
+  async archiveThreads(
+    ids: string[],
+    options: { protectDescendants?: boolean } = {}
+  ): Promise<BatchOperationResult> {
+    if (options.protectDescendants) {
+      const { entries, roots, preview } = await this.prepareDelete(ids)
+      const archived = new Set(entries.filter((entry) => entry.archived).map((entry) => entry.thread.id))
+      const result = await this.runBatch('thread/archive', roots.filter((id) => !archived.has(id)))
+      return {
+        ...result,
+        skipped: [...preview.skipped, ...roots.filter((id) => archived.has(id)).map((id) => ({
+          id, message: 'Thread is already archived. Refresh and retry.'
+        }))]
+      }
+    }
     return this.runStateBatch('thread/archive', ids, (entry) => !entry.archived)
   }
 
@@ -273,7 +287,7 @@ export class ThreadService {
         succeeded: [],
         failed: ids.map((id) => ({
           id,
-          message: 'Pinning requires a Codex CLI version that exposes the pinning API.'
+          message: 'This Codex CLI does not expose a supported pinning API.'
         })),
         skipped: [],
         cascadedCount: 0,

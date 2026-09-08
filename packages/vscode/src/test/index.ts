@@ -15,7 +15,7 @@ export async function run(): Promise<void> {
   const fakeVersionFile = join(codexHome, 'fake-version.txt')
   const configuration = vscode.workspace.getConfiguration('threadbox')
   try {
-    await writeFile(fakeVersionFile, '0.149.1\n', 'utf8')
+    await writeFile(fakeVersionFile, '0.153.2\n', 'utf8')
     process.env.THREADBOX_FAKE_VERSION_FILE = fakeVersionFile
     await configuration.update('codexBinary', fakeCli, vscode.ConfigurationTarget.Global)
     await configuration.update('codexHome', codexHome, vscode.ConfigurationTarget.Global)
@@ -45,14 +45,16 @@ export async function run(): Promise<void> {
     assert(!capabilities.desktopRecentsRepair, 'VS Code must not expose Recents repair.')
 
     const status = await api.getEnvironmentStatus()
-    assert(status.state === 'outdated' && status.cliVersion === '0.149.1',
+    assert(status.state === 'outdated' && status.cliVersion === '0.153.2',
       'Fake Codex did not start below the minimum version.')
     assert(api.updateCodexCli, 'VS Code did not expose Codex CLI update.')
     const updatedStatus = await api.updateCodexCli()
-    assert(updatedStatus.state === 'ready' && updatedStatus.cliVersion === '0.150.1',
+    assert(updatedStatus.state === 'ready' && updatedStatus.cliVersion === '0.153.4',
       'VS Code did not update and re-probe the fake Codex CLI.')
     const listed = await api.listThreads()
     assert(listed.threads.length === 4, 'VS Code did not load active and archived fake tasks.')
+    assert(!listed.environment.capabilities.pinning && listed.threads.every((thread) => !thread.pinned),
+      'Unsupported pinning APIs must not make all tasks appear pinned.')
     assert(api.importCurrentWorkspaceProject, 'VS Code did not expose workspace project import.')
     const seed = await api.createProject('Workspace import seed')
     const seedProject = seed.projects.find((item) => item.name === 'Workspace import seed')
@@ -133,6 +135,7 @@ export async function run(): Promise<void> {
         args?: string[]
         method?: string
         params?: {
+          isPinned?: boolean
           useStateDbOnly?: boolean
           historyMode?: string
           capabilities?: { experimentalApi?: boolean; requestAttestation?: boolean }
@@ -156,6 +159,9 @@ export async function run(): Promise<void> {
       'VS Code did not unsubscribe from a newly created task.')
     assert(!appServerMessages.some((message) => message.method?.startsWith('project/')),
       'VS Code sent an unsupported project/* request to App Server.')
+    assert(!appServerMessages.some((message) =>
+      message.method === 'thread/list' && message.params?.isPinned !== undefined),
+    'VS Code sent an unsupported pinning filter.')
   } finally {
     delete process.env.THREADBOX_FAKE_VERSION_FILE
     await configuration.update('codexBinary', undefined, vscode.ConfigurationTarget.Global)

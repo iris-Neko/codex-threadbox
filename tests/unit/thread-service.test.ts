@@ -8,8 +8,8 @@ import type { Thread } from '../../src/shared/protocol/generated/v2/Thread'
 const ready: EnvironmentStatus = {
   state: 'ready',
   cliPath: 'codex',
-  cliVersion: '0.150.0',
-  minimumVersion: '0.150.0',
+  cliVersion: '0.153.3',
+  minimumVersion: '0.153.3',
   message: null,
   externalCodexProcesses: 0,
   capabilities: { pinning: true }
@@ -33,7 +33,7 @@ function thread(id: string, overrides: Partial<Thread> = {}): Thread {
     status: { type: 'notLoaded' },
     path: null,
     cwd: '/workspace',
-    cliVersion: '0.150.0',
+    cliVersion: '0.153.3',
     source: 'cli',
     threadSource: null,
     agentNickname: null,
@@ -93,6 +93,20 @@ class FakeDirectoryCleaner implements WorkingDirectoryCleanerLike {
 }
 
 describe('ThreadService', () => {
+  it.each(['active', 'pinned'] as const)('revalidates %s descendants immediately before Trash archiving', async (protection) => {
+    const parent = thread('parent')
+    const child = thread('child', { parentThreadId: 'parent' })
+    const pins = new Set<string>()
+    const client = new FakeClient([parent, child], [], pins)
+    const service = new ThreadService(client)
+    expect((await service.previewDeleteThreads(['parent'])).roots).toHaveLength(1)
+    if (protection === 'active') child.status = { type: 'active', activeFlags: [] }
+    else pins.add('child')
+    const result = await service.archiveThreads(['parent'], { protectDescendants: true })
+    expect(result.succeeded).toEqual([])
+    expect(result.skipped[0]?.message).toContain('descendant')
+    expect(client.calls.some((call) => call.method === 'thread/archive')).toBe(false)
+  })
   it('follows pagination cursors until all pages are loaded', async () => {
     const pages = [thread('first'), thread('second')]
     let activeCalls = 0

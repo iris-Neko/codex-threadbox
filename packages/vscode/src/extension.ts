@@ -588,11 +588,6 @@ function attachRpc(
     let response: RpcResponse
     try {
       response = { kind: 'threadbox.response', id: request.id, ok: true, value: await dispatch(api, request) }
-      if (['deleteThreads', 'trashThreads', 'restoreThreadsFromTrash', 'emptyTrash',
-        'archiveThreads', 'unarchiveThreads', 'setPinned', 'updateSettings',
-        'createProject', 'importCurrentWorkspaceProject', 'renameProject', 'deleteProject', 'assignThreads',
-        'createThreadInProject', 'updateCodexCli']
-        .includes(request.method)) onMutation()
     } catch (error) {
       response = {
         kind: 'threadbox.response',
@@ -601,6 +596,11 @@ function attachRpc(
         error: error instanceof Error ? error.message : String(error)
       }
     }
+    if (['deleteThreads', 'trashThreads', 'restoreThreadsFromTrash', 'emptyTrash',
+      'archiveThreads', 'unarchiveThreads', 'setPinned', 'updateSettings',
+      'createProject', 'importCurrentWorkspaceProject', 'renameProject', 'deleteProject', 'assignThreads',
+      'createThreadInProject', 'updateCodexCli']
+      .includes(request.method)) onMutation()
     await panel.webview.postMessage(response)
   })
 }
@@ -610,7 +610,7 @@ export interface ThreadboxExtensionApi {
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<ThreadboxExtensionApi> {
-  const version = String(context.extension.packageJSON.version ?? '0.9.2')
+  const version = String(context.extension.packageJSON.version ?? '0.9.3')
   const runtime = new RuntimeHost(version)
   await migrateLegacyProjectStorage(context.globalStorageUri.fsPath)
   const projects = new ProjectStore(join(context.globalStorageUri.fsPath, 'projects-v1.json'))

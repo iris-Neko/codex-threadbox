@@ -17,8 +17,8 @@ function runtime(): CodexRuntimeLike {
       status: {
         state: 'ready',
         cliPath: process.execPath,
-        cliVersion: '0.150.1',
-        minimumVersion: '0.150.0',
+        cliVersion: '0.153.4',
+        minimumVersion: '0.153.3',
         message: null,
         externalCodexProcesses: 0,
         capabilities: { pinning: false }

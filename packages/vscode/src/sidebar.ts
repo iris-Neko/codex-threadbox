@@ -1,6 +1,7 @@
 import { basename } from 'node:path'
 import * as vscode from 'vscode'
 import type {
+  BatchOperationResult,
   EnvironmentStatus,
   ListThreadsResult,
   ProjectRecord,
@@ -18,6 +19,7 @@ import {
   selectedRootIds,
   type ThreadHierarchyNode
 } from './sidebar-selection'
+import { batchFeedback, ProjectAssignmentError } from './operation-feedback'
 
 const SETTINGS_COMMAND = 'workbench.action.openSettings'
 const TREE_MIME = 'application/vnd.code.tree.threadbox.sidebar'
@@ -248,8 +250,7 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
       const targetProjectId = target.project?.id ?? null
       const ids = this.actionableRootIds(value, targetProjectId)
       if (ids.length === 0) return
-      this.updateSnapshot(await this.api.assignThreads(ids, targetProjectId))
-      this.redraw()
+      await this.assignAndRefresh(ids, targetProjectId)
     } catch (error) { await this.showError(error) }
   }
 
@@ -366,8 +367,7 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
       }
       const ids = this.actionableRootIds(roots, projectId)
       if (ids.length === 0) return
-      this.updateSnapshot(await this.api.assignThreads(ids, projectId))
-      this.redraw()
+      await this.assignAndRefresh(ids, projectId)
     }
     catch (error) { await this.showError(error) }
   }
@@ -385,6 +385,24 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
     return [...new Set(items.flatMap((item) => item.selectionIds ?? collectThreadIds([item])))]
   }
 
+  private async assignAndRefresh(ids: string[], projectId: string | null): Promise<void> {
+    try {
+      this.updateSnapshot(await this.api.assignThreads(ids, projectId))
+    } finally {
+      await this.refreshNow()
+    }
+  }
+
+  private async finishBatch(result: BatchOperationResult): Promise<void> {
+    await this.refreshNow()
+    const message = batchFeedback(result, this.locale)
+    if (result.failed.length > 0 || result.skipped.length > 0) {
+      void vscode.window.showWarningMessage(message)
+    } else {
+      void vscode.window.showInformationMessage(message)
+    }
+  }
+
   async archiveThreads(items: readonly SidebarItem[], archived: boolean): Promise<void> {
     const threads = items.flatMap((item) => item.thread ? [item.thread] : [])
       .filter((thread) => thread.status !== 'active' && thread.archived !== archived)
@@ -400,7 +418,7 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
     const threads = items.flatMap((item) => item.thread ? [item.thread] : [])
       .filter((thread) => thread.status !== 'active' && thread.pinned !== pinned)
     if (threads.length === 0) return
-    try { await this.api.setPinned(threads.map((thread) => thread.id), pinned); this.refresh() }
+    try { await this.finishBatch(await this.api.setPinned(threads.map((thread) => thread.id), pinned)) }
     catch (error) { await this.showError(error) }
   }
 
@@ -415,11 +433,7 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
       const result = this.api.trashThreads
         ? await this.api.trashThreads(ids)
         : await this.api.deleteThreads(ids, { trashWorkingDirectories: [] })
-      if (result.failed.length > 0 || result.skipped.length > 0) {
-        await vscode.window.showWarningMessage(
-          `${result.succeeded.length} succeeded, ${result.failed.length} failed, ${result.skipped.length} skipped.`)
-      }
-      this.refresh()
+      await this.finishBatch(result)
     } catch (error) { await this.showError(error) }
   }
 
@@ -428,11 +442,7 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
     if (ids.length === 0 || !this.api.restoreThreadsFromTrash) return
     try {
       const result = await this.api.restoreThreadsFromTrash(ids)
-      if (result.failed.length > 0 || result.skipped.length > 0) {
-        await vscode.window.showWarningMessage(
-          `${result.succeeded.length} succeeded, ${result.failed.length} failed, ${result.skipped.length} skipped.`)
-      }
-      this.refresh()
+      await this.finishBatch(result)
     } catch (error) { await this.showError(error) }
   }
 
@@ -444,11 +454,7 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
     if (confirmed !== copy.emptyTrash) return
     try {
       const result = await this.api.emptyTrash()
-      if (result.failed.length > 0 || result.skipped.length > 0) {
-        await vscode.window.showWarningMessage(
-          `${result.succeeded.length} succeeded, ${result.failed.length} failed, ${result.skipped.length} skipped.`)
-      }
-      this.refresh()
+      await this.finishBatch(result)
     } catch (error) { await this.showError(error) }
   }
 
@@ -525,7 +531,8 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
       const thread = node.thread
       const children = node.children.map(visit)
       const archive = thread.archived ? 'archived' : 'active'
-      const pin = thread.pinned ? 'pinned' : 'unpinned'
+      const pin = !this.loaded?.result.environment.capabilities.pinning
+        ? 'pinUnavailable' : thread.pinned ? 'pinned' : 'unpinned'
       return new SidebarItem(thread.title, {
         id: `threadbox:thread:${thread.id}`,
         kind: 'thread', description: basename(thread.cwd),
@@ -679,6 +686,10 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
   }
 
   private async showError(error: unknown): Promise<void> {
+    if (error instanceof ProjectAssignmentError) {
+      void vscode.window.showWarningMessage(batchFeedback(error.result, this.locale))
+      return
+    }
     await vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error))
   }
 }

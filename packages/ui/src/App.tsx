@@ -64,7 +64,7 @@ const INITIAL_ENVIRONMENT: EnvironmentStatus = {
   state: 'error',
   cliPath: null,
   cliVersion: null,
-  minimumVersion: '0.150.0',
+  minimumVersion: '0.153.3',
   message: null,
   externalCodexProcesses: 0,
   capabilities: { pinning: false }
@@ -80,6 +80,9 @@ function operationSummary(
     skipped: result.skipped.length
   })
   const details: string[] = [taskSummary]
+  for (const issue of [...result.failed, ...result.skipped].slice(0, 5)) {
+    details.push(issue.id + ': ' + issue.message)
+  }
   if (result.directoryCleanup && result.directoryCleanup.requested.length > 0) {
     details.push(translate('directoryCleanupDone', {
       trashed: result.directoryCleanup.trashed.length,
@@ -340,13 +343,15 @@ export default function App({ api, version = packageJson.version }: ThreadboxApp
         setNotice(t('projectUpdated'))
         setSelected(new Set())
         if (closeDialog) setProjectDialog(null)
+        await refresh()
       } catch (caught) {
+        await refresh()
         setError(caught instanceof Error ? caught.message : t('operationFailed'))
       } finally {
         setBusy(false)
       }
     },
-    [t]
+    [refresh, t]
   )
 
   const moveToTrash = useCallback((ids: string[]): void => {
