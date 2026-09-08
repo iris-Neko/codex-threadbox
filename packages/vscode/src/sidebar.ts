@@ -19,7 +19,8 @@ import {
   selectedRootIds,
   type ThreadHierarchyNode
 } from './sidebar-selection'
-import { batchFeedback, ProjectAssignmentError } from './operation-feedback'
+import { batchNotice, ProjectAssignmentError } from './operation-feedback'
+import { requireWorkspaceTrust } from './workspace-trust'
 
 const SETTINGS_COMMAND = 'workbench.action.openSettings'
 const TREE_MIME = 'application/vnd.code.tree.threadbox.sidebar'
@@ -168,6 +169,8 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
   private loaded: LoadedSidebarData | null = null
   private snapshot: ProjectSnapshot = { projects: [], assignments: {}, refreshedAt: 0 }
   private searchQuery = ''
+  private operationLog: vscode.OutputChannel | null = null
+  private disposed = false
 
   readonly onDidChangeTreeData = this.changed.event
   readonly onDidChangeSummary = this.summaryChanged.event
@@ -197,7 +200,13 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
     this.cached ??= this.loadRootItems()
     return this.cached
   }
-  dispose(): void { this.changed.dispose(); this.summaryChanged.dispose(); this.searchChanged.dispose() }
+  dispose(): void {
+    this.disposed = true
+    this.changed.dispose()
+    this.summaryChanged.dispose()
+    this.searchChanged.dispose()
+    this.operationLog?.dispose()
+  }
 
   async search(): Promise<void> {
     const copy = labels(this.locale)
@@ -393,13 +402,44 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
     }
   }
 
-  private async finishBatch(result: BatchOperationResult): Promise<void> {
+  private async finishBatch(
+    result: BatchOperationResult,
+    retry?: (ids: string[]) => Promise<BatchOperationResult>
+  ): Promise<void> {
     await this.refreshNow()
-    const message = batchFeedback(result, this.locale)
+    this.reportBatch(result, retry)
+  }
+
+  private reportBatch(result: BatchOperationResult, retry?: (ids: string[]) => Promise<BatchOperationResult>): void {
+    if (this.disposed) return
+    const titles = new Map((this.loaded?.result.threads ?? []).map((thread) => [thread.id, thread.title]))
+    const notice = batchNotice(result, this.locale, titles)
     if (result.failed.length > 0 || result.skipped.length > 0) {
-      void vscode.window.showWarningMessage(message)
+      const chinese = this.locale.toLowerCase().startsWith('zh')
+      const details = chinese ? '查看详情' : 'View Details'
+      const open = chinese ? '在 Codex 中打开' : 'Open in Codex'
+      const retryLabel = chinese ? '重试' : 'Retry'
+      const actions = [details]
+      if (notice.lockedIds.length === 1) actions.unshift(open)
+      if (retry) actions.push(retryLabel)
+      this.operationLog ??= vscode.window.createOutputChannel('Threadbox')
+      this.operationLog.appendLine(new Date().toISOString() + '\n' + notice.details)
+      void Promise.resolve(vscode.window.showWarningMessage(notice.message, ...actions)).then(async (choice) => {
+        if (this.disposed) return
+        if (choice === details) { this.operationLog?.show(true); return }
+        if (choice !== open && choice !== retryLabel) return
+        requireWorkspaceTrust(vscode.workspace.isTrusted)
+        if (choice === open && notice.lockedIds.length === 1) {
+          await vscode.commands.executeCommand('threadbox.openInCodex', notice.lockedIds[0])
+        } else if (choice === retryLabel && retry) {
+          const succeeded = new Set(result.succeeded)
+          const ids = [...new Set([...result.failed, ...result.skipped].map((issue) => issue.id))]
+            .filter((id) => !succeeded.has(id))
+          if (ids.length > 0) await this.finishBatch(await retry(ids), retry)
+        }
+      }).catch((error: unknown) => this.showError(error))
     } else {
-      void vscode.window.showInformationMessage(message)
+      void vscode.window.showInformationMessage(notice.message)
     }
   }
 
@@ -430,10 +470,10 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
       `${copy.moveToTrashConfirm}\n\n${ids.length}`, { modal: true }, copy.moveToTrash)
     if (confirmed !== copy.moveToTrash) return
     try {
-      const result = this.api.trashThreads
-        ? await this.api.trashThreads(ids)
-        : await this.api.deleteThreads(ids, { trashWorkingDirectories: [] })
-      await this.finishBatch(result)
+      const move = (targets: string[]): Promise<BatchOperationResult> => this.api.trashThreads
+        ? this.api.trashThreads(targets)
+        : this.api.deleteThreads(targets, { trashWorkingDirectories: [] })
+      await this.finishBatch(await move(ids), move)
     } catch (error) { await this.showError(error) }
   }
 
@@ -442,7 +482,7 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
     if (ids.length === 0 || !this.api.restoreThreadsFromTrash) return
     try {
       const result = await this.api.restoreThreadsFromTrash(ids)
-      await this.finishBatch(result)
+      await this.finishBatch(result, (targets) => this.api.restoreThreadsFromTrash!(targets))
     } catch (error) { await this.showError(error) }
   }
 
@@ -687,7 +727,7 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
 
   private async showError(error: unknown): Promise<void> {
     if (error instanceof ProjectAssignmentError) {
-      void vscode.window.showWarningMessage(batchFeedback(error.result, this.locale))
+      this.reportBatch(error.result)
       return
     }
     await vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error))

@@ -1,9 +1,10 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ThreadboxApi, ThreadRecord } from '../../src/shared/contracts'
+import type { BatchOperationResult, ThreadboxApi, ThreadRecord } from '../../src/shared/contracts'
 
 const ui = vi.hoisted(() => ({
-  warning: vi.fn(), info: vi.fn(), error: vi.fn(), trusted: true
+  warning: vi.fn(), info: vi.fn(), error: vi.fn(), trusted: true,
+  appendLine: vi.fn(), showLog: vi.fn(), disposeLog: vi.fn(), command: vi.fn()
 }))
 vi.mock('vscode', () => ({
   EventEmitter: class {
@@ -15,7 +16,11 @@ vi.mock('vscode', () => ({
   ThemeIcon: class { constructor(public id: string) {} },
   TreeItemCollapsibleState: { None: 0, Collapsed: 1 },
   workspace: { get isTrusted() { return ui.trusted } },
-  window: { showWarningMessage: ui.warning, showInformationMessage: ui.info, showErrorMessage: ui.error }
+  window: {
+    showWarningMessage: ui.warning, showInformationMessage: ui.info, showErrorMessage: ui.error,
+    createOutputChannel: () => ({ appendLine: ui.appendLine, show: ui.showLog, dispose: ui.disposeLog })
+  },
+  commands: { executeCommand: ui.command }
 }))
 
 import { SidebarItem, ThreadboxSidebarProvider } from '../../packages/vscode/src/sidebar'
@@ -31,7 +36,7 @@ const trash = {
   readOnly: true, roots: [], codexProjectId: null, canCreateThread: false,
   createThreadUnavailableReason: '', createdAt: 1, updatedAt: 2
 }
-const result = { succeeded: ['ordinary'], failed: [], skipped: [], cascadedCount: 0, refreshedAt: 1 }
+const result: BatchOperationResult = { succeeded: ['ordinary'], failed: [], skipped: [], cascadedCount: 0, refreshedAt: 1 }
 const environment = {
   state: 'ready', cliVersion: '0.153.4', cliPath: '/codex', minimumVersion: '0.153.3',
   capabilities: { pinning: false }, externalCodexProcesses: 0, message: null
@@ -58,6 +63,60 @@ beforeEach(() => {
 })
 
 describe('Sidebar Trash actions', () => {
+  it('opens the exact locked task through the existing Codex integration', async () => {
+    const { api, sidebar, item } = setup()
+    api.trashThreads.mockResolvedValueOnce({ ...result, succeeded: [], failed: [
+      { id: thread.id, message: 'thread ordinary already has an active writer' }
+    ] } as typeof result)
+    ui.warning.mockResolvedValueOnce('Move to Trash').mockResolvedValueOnce('Open in Codex')
+    await sidebar.deleteThreads([item])
+    await vi.waitFor(() => expect(ui.command).toHaveBeenCalledWith('threadbox.openInCodex', thread.id))
+    expect(ui.warning).toHaveBeenLastCalledWith(expect.stringContaining('still open in Codex'),
+      'Open in Codex', 'View Details', 'Retry')
+    expect(api.trashThreads).toHaveBeenCalledOnce()
+    sidebar.dispose()
+  })
+
+  it('shows all error details even when a notification would be truncated', async () => {
+    const { api, sidebar, item } = setup()
+    const raw = 'thread ordinary already has an active writer'
+    api.trashThreads.mockResolvedValueOnce({ ...result, succeeded: [], failed: [
+      { id: thread.id, message: raw }
+    ] } as typeof result)
+    ui.warning.mockResolvedValueOnce('Move to Trash').mockResolvedValueOnce('View Details')
+    await sidebar.deleteThreads([item])
+    await vi.waitFor(() => expect(ui.showLog).toHaveBeenCalledWith(true))
+    expect(ui.appendLine).toHaveBeenCalledWith(expect.stringContaining(raw))
+    sidebar.dispose()
+    expect(ui.disposeLog).toHaveBeenCalledOnce()
+  })
+
+  it('retries failed task IDs only, without replaying successful moves', async () => {
+    const { api, sidebar, item } = setup()
+    api.trashThreads.mockResolvedValueOnce({ ...result, failed: [
+      { id: 'locked', message: 'thread locked already has an active writer' }
+    ] } as typeof result)
+    ui.warning.mockResolvedValueOnce('Move to Trash').mockResolvedValueOnce('Retry')
+    await sidebar.deleteThreads([item])
+    await vi.waitFor(() => expect(api.trashThreads).toHaveBeenLastCalledWith(['locked']))
+    expect(api.trashThreads).toHaveBeenCalledTimes(2)
+    sidebar.dispose()
+  })
+
+  it('does not retry after workspace trust has been revoked', async () => {
+    const { api, sidebar, item } = setup()
+    api.trashThreads.mockResolvedValueOnce({ ...result, succeeded: [], failed: [
+      { id: 'locked', message: 'thread locked already has an active writer' }
+    ] } as typeof result)
+    ui.warning.mockResolvedValueOnce('Move to Trash').mockImplementationOnce(() => {
+      ui.trusted = false
+      return Promise.resolve('Retry')
+    })
+    await sidebar.deleteThreads([item])
+    await vi.waitFor(() => expect(ui.error).toHaveBeenCalled())
+    expect(api.trashThreads).toHaveBeenCalledOnce()
+    sidebar.dispose()
+  })
   it('reloads immediately after moving, without waiting for the notification to close', async () => {
     const { api, sidebar, item } = setup()
     await sidebar.deleteThreads([item])
@@ -83,7 +142,7 @@ describe('Sidebar Trash actions', () => {
       get: () => ({ asString: async () => JSON.stringify(['ordinary']) })
     } as never)
     expect(api.listThreads).toHaveBeenCalledTimes(2)
-    expect(ui.warning).toHaveBeenCalledWith(expect.stringContaining('ordinary: Active threads'))
+    expect(ui.warning).toHaveBeenCalledWith(expect.stringContaining('Ordinary task: Active threads'), 'View Details')
     sidebar.dispose()
   })
   it('hides pin controls when the current CLI cannot support them', async () => {

@@ -17,7 +17,7 @@ async function run(): Promise<void> {
     ...process.env, CODEX_HOME: directory
   })
   const descriptor = {
-    name: 'threadbox_isolated_trash_smoke', title: 'Threadbox isolated Trash smoke', version: '0.9.3',
+    name: 'threadbox_isolated_trash_smoke', title: 'Threadbox isolated Trash smoke', version: '0.9.4',
     initializeCapabilities: { experimentalApi: true, requestAttestation: false }
   }
   const client = new AppServerClient(runtime, descriptor)
@@ -30,12 +30,16 @@ async function run(): Promise<void> {
     const store = new ProjectStore(join(directory, 'threadbox', 'projects-v1.json'))
     const snapshot = await store.create('Trash smoke')
     const project = snapshot.projects.find((item) => item.name === 'Trash smoke')!
+    const controller = new TrashController(service, store)
     let created
     try {
       created = await createProjectThread(creator, project, 'Disposable Trash smoke', directory,
         (id, projectId) => store.assignCreatedThread(id, projectId))
+      const locked = await controller.trash([created.threadId])
+      assert.deepEqual(locked.succeeded, [], 'A foreign writer must not be bypassed.')
+      assert.match(locked.failed[0]?.message ?? '', /already has an active writer/)
+      assert.deepEqual(await store.listTrashRoots(), [], 'A failed archive must not create a Trash assignment.')
     } finally { creator.stop() }
-    const controller = new TrashController(service, store)
     const trashed = await controller.trash([created.threadId])
     assert.deepEqual(trashed.succeeded, [created.threadId], JSON.stringify(trashed))
     assert.deepEqual(await store.listTrashRoots(), [created.threadId])
@@ -51,6 +55,7 @@ async function run(): Promise<void> {
     console.log(JSON.stringify({
       cli: initial.environment.cliVersion, pinning: initial.environment.capabilities.pinning,
       created: true, trashed: true, restored: true, dragToTrash: true, emptied: true,
+      foreignWriterProtected: true, retryAfterRelease: true,
       isolatedHome: directory
     }))
   } finally {

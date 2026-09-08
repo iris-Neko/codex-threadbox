@@ -86,6 +86,7 @@ function commandThreadId(value: unknown): string | null {
 }
 
 async function openThreadInCodex(threadId: string): Promise<void> {
+  requireWorkspaceTrust(vscode.workspace.isTrusted)
   const extension = vscode.extensions.getExtension(CODEX_EXTENSION_ID)
   if (!extension) throw new Error('The Codex extension is not installed on this extension host.')
   const activationEvents = (extension.packageJSON as { activationEvents?: unknown }).activationEvents
@@ -610,7 +611,7 @@ export interface ThreadboxExtensionApi {
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<ThreadboxExtensionApi> {
-  const version = String(context.extension.packageJSON.version ?? '0.9.3')
+  const version = String(context.extension.packageJSON.version ?? '0.9.4')
   const runtime = new RuntimeHost(version)
   await migrateLegacyProjectStorage(context.globalStorageUri.fsPath)
   const projects = new ProjectStore(join(context.globalStorageUri.fsPath, 'projects-v1.json'))
