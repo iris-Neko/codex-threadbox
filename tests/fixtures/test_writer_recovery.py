@@ -18,6 +18,14 @@ OWNER = {"pid": 12345, "uid": 1000, "startTime": "1234", "executable": "/trusted
 
 
 class RecoveryTests(unittest.TestCase):
+    def test_mismatched_pid_namespace_is_rejected_before_opening_pidfd(self):
+        with patch.object(recovery.os, "readlink", return_value="999999"), \
+             patch.object(recovery.os, "getpid", return_value=123), \
+             patch.object(recovery.os, "pidfd_open", create=True) as opened:
+            with self.assertRaisesRegex(ValueError, "PID namespace"):
+                recovery.checked_signal("/home/test/.codex", TASK, {"/trusted/codex"}, OWNER, False)
+            opened.assert_not_called()
+
     def invoke(self, current, force=False):
         with patch.object(recovery.os, "pidfd_open", return_value=42, create=True), \
              patch.object(recovery.os, "close") as closed, \

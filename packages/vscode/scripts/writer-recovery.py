@@ -11,6 +11,11 @@ import time
 UUID = re.compile(r"^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$")
 
 
+def validate_proc_namespace():
+    if os.readlink("/proc/self") != str(os.getpid()):
+        raise ValueError("Recovery is disabled because /proc uses a different PID namespace.")
+
+
 def birth(pid):
     with open(f"/proc/{pid}/stat") as stream:
         return stream.read().rsplit(")", 1)[1].split()[19]
@@ -111,6 +116,7 @@ def validate_approval(current, approved):
 
 
 def checked_signal(home, thread_id, allowed, approved, force):
+    validate_proc_namespace()
     pid = approved.get("pid")
     if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 1:
         raise ValueError("Invalid process identity.")
@@ -134,6 +140,7 @@ def checked_signal(home, thread_id, allowed, approved, force):
 def main(request):
     if sys.platform != "linux" or not hasattr(os, "pidfd_open") or not hasattr(signal, "pidfd_send_signal"):
         raise ValueError("Recovery requires Linux with pidfd support and Python 3.9 or newer.")
+    validate_proc_namespace()
     home = request.get("codexHome")
     thread_id = request.get("threadId")
     allowed = request.get("allowedExecutables")

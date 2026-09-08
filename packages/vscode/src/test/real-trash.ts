@@ -19,7 +19,7 @@ async function run(): Promise<void> {
     ...process.env, CODEX_HOME: directory
   })
   const descriptor = {
-    name: 'threadbox_isolated_trash_smoke', title: 'Threadbox isolated Trash smoke', version: '0.9.5',
+    name: 'threadbox_isolated_trash_smoke', title: 'Threadbox isolated Trash smoke', version: '0.9.6',
     initializeCapabilities: { experimentalApi: true, requestAttestation: false }
   }
   const client = new AppServerClient(runtime, descriptor)
