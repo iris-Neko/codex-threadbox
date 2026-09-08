@@ -59,6 +59,7 @@ export async function run(): Promise<void> {
       directories: () => (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath)
     })
     try {
+      sidebar.toggleMultiSelect()
       await sidebar.setView({ scope: 'workspace', archive: 'active', sort: 'title-asc' })
       const flatten = (items: SidebarItem[]): SidebarItem[] => items.flatMap((item) => [item, ...flatten(item.children ?? [])])
       const items = flatten(await sidebar.getChildren())

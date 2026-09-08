@@ -79,6 +79,7 @@ const SIDEBAR_COMMANDS = {
 } as const
 
 function selectedItems(primary?: SidebarItem, selection?: SidebarItem[]): SidebarItem[] {
+  if (primary && selection?.length && !selection.includes(primary)) return [primary]
   if (selection && selection.length > 0) return selection
   return primary ? [primary] : []
 }
@@ -573,7 +574,7 @@ export interface ThreadboxExtensionApi {
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<ThreadboxExtensionApi> {
-  const version = String(context.extension.packageJSON.version ?? '0.10.0')
+  const version = String(context.extension.packageJSON.version ?? '0.10.1')
   const runtime = new RuntimeHost(version)
   await migrateLegacyProjectStorage(context.globalStorageUri.fsPath)
   const projects = new ProjectStore(join(context.globalStorageUri.fsPath, 'projects-v1.json'))
@@ -678,6 +679,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Thread
     void vscode.commands.executeCommand('setContext', 'threadbox.searchActive', query.length > 0)
   }))
   void vscode.commands.executeCommand('setContext', 'threadbox.searchActive', false)
+  void vscode.commands.executeCommand('setContext', 'threadbox.multiSelectMode', false)
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
     if (event.affectsConfiguration('threadbox.codexBinary') ||
       event.affectsConfiguration('threadbox.codexHome')) runtime.reset()
@@ -688,6 +690,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Thread
   }))
   context.subscriptions.push(
     vscode.commands.registerCommand('threadbox.filterSidebar', () => sidebar.filter()),
+    vscode.commands.registerCommand('threadbox.toggleMultiSelect', () => sidebar.toggleMultiSelect()),
     vscode.commands.registerCommand('threadbox.sortSidebar', () => sidebar.sort()),
     vscode.commands.registerCommand('threadbox.resetFilters', () => sidebar.resetFilters()),
     vscode.commands.registerCommand('threadbox.selectFiltered', () => sidebar.selectFiltered()),

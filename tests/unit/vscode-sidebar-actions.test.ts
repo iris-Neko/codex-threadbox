@@ -46,8 +46,10 @@ const environment = {
 function setup(recover?: (ids: string[]) => Promise<BatchOperationResult | null>, records = [thread], preferences?: SidebarPreferences) {
   const api = {
     renameThread: vi.fn(async () => undefined),
-    trashThreads: vi.fn(async () => result),
+    trashThreads: vi.fn<(ids: string[]) => Promise<BatchOperationResult>>().mockResolvedValue(result),
     restoreThreadsFromTrash: vi.fn(async () => result),
+    archiveThreads: vi.fn(async () => result),
+    unarchiveThreads: vi.fn(async () => result),
     emptyTrash: vi.fn(async () => result),
     listThreads: vi.fn(async () => ({
       threads: records, environment, inventory: { state: 'complete', message: null }, refreshedAt: 1
@@ -69,6 +71,83 @@ beforeEach(() => {
 })
 
 describe('Sidebar Trash actions', () => {
+  it('re-archives restored tasks if a drag-to-project assignment fails', async () => {
+    const { sidebar, api } = setup(undefined, [{ ...thread, archived: true }])
+    await sidebar.getChildren()
+    api.assignThreads.mockRejectedValueOnce(new Error('disk full'))
+    ui.warning.mockResolvedValueOnce('Move to project')
+    await sidebar.handleDrop(new SidebarItem('Unassigned', { kind: 'unassigned' }), {
+      get: () => ({ asString: async () => JSON.stringify(['ordinary']) })
+    } as never)
+    expect(api.unarchiveThreads).toHaveBeenCalledExactlyOnceWith(['ordinary'])
+    expect(api.archiveThreads).toHaveBeenCalledExactlyOnceWith(['ordinary'])
+    expect(ui.error).toHaveBeenCalledWith('disk full')
+    sidebar.dispose()
+  })
+  it('hides checkboxes until multiselect is enabled, and clears them when disabled', async () => {
+    const { sidebar, api } = setup()
+    const flat = (items: SidebarItem[]): SidebarItem[] => items.flatMap((i) => [i, ...flat(i.children ?? [])])
+    expect(flat(await sidebar.getChildren()).find((i) => i.thread)?.checkboxState).toBeUndefined()
+    sidebar.toggleMultiSelect()
+    const item = flat(await sidebar.getChildren()).find((i) => i.thread)!
+    sidebar.checkItems([[item, 1]])
+    sidebar.toggleMultiSelect()
+    await sidebar.deleteThreads([])
+    expect(api.trashThreads).not.toHaveBeenCalled()
+    expect(flat(await sidebar.getChildren()).find((i) => i.thread)?.checkboxState).toBeUndefined()
+    sidebar.dispose()
+  })
+  it('right-clicking a checked item applies Trash to all checked tasks, but an unchecked item stays independent', async () => {
+    const second = { ...thread, id: 'second' }, third = { ...thread, id: 'third' }
+    const { sidebar, api } = setup(undefined, [thread, second, third])
+    const flat = (items: SidebarItem[]): SidebarItem[] => items.flatMap((i) => [i, ...flat(i.children ?? [])])
+    sidebar.toggleMultiSelect()
+    const items = flat(await sidebar.getChildren()).filter((i) => i.thread)
+    sidebar.checkItems(items.filter((i) => i.thread?.id !== 'third').map((i) => [i, 1]))
+    await sidebar.deleteThreads([items.find((i) => i.thread?.id === 'third')!])
+    expect(api.trashThreads).toHaveBeenLastCalledWith(['third'])
+    await sidebar.getChildren()
+    sidebar.checkItems(items.filter((i) => i.thread?.id !== 'third').map((i) => [i, 1]))
+    await sidebar.deleteThreads([items.find((i) => i.thread?.id === 'ordinary')!])
+    expect(new Set(api.trashThreads.mock.calls.at(-1)?.[0])).toEqual(new Set(['ordinary', 'second']))
+    sidebar.dispose()
+  })
+  it('places archived tasks under a sibling Archive grouped by original directory, excluding Trash', async () => {
+    const archived = { ...thread, id: 'old', archived: true }
+    const trashed = { ...thread, id: 'bin', archived: true }
+    const { sidebar, api } = setup(undefined, [thread, archived, trashed])
+    api.listProjects.mockResolvedValue({ projects: [trash], assignments: { bin: trash.id }, refreshedAt: 1 })
+    const sections = await sidebar.getChildren()
+    const groups = sections.find((i) => i.kind === 'section')!.children!
+    const archive = groups.find((i) => i.id === 'threadbox:project:archived')!
+    const unassigned = groups.find((i) => i.kind === 'unassigned')!
+    expect(archive.children?.[0]?.kind).toBe('directory')
+    expect(archive.children?.[0]?.children?.map((i) => i.thread?.id)).toEqual(['old'])
+    expect(unassigned.children?.[0]?.children?.map((i) => i.thread?.id)).toEqual(['ordinary'])
+    sidebar.dispose()
+  })
+  it('archives multiple native-selected tasks when dropped onto Archive', async () => {
+    const { sidebar, api } = setup(undefined, [thread, { ...thread, id: 'second' }])
+    await sidebar.getChildren()
+    ui.warning.mockResolvedValueOnce('Archive')
+    await sidebar.handleDrop(new SidebarItem('Archived', { kind: 'archive' }), {
+      get: () => ({ asString: async () => JSON.stringify(['ordinary', 'second']) })
+    } as never)
+    expect(api.archiveThreads).toHaveBeenCalledExactlyOnceWith(['ordinary', 'second'])
+    sidebar.dispose()
+  })
+  it('restores archived tasks when dragged back to Unassigned', async () => {
+    const { sidebar, api } = setup(undefined, [{ ...thread, archived: true }])
+    await sidebar.getChildren()
+    api.assignThreads.mockResolvedValue({ projects: [trash], assignments: {}, refreshedAt: 1 })
+    ui.warning.mockResolvedValueOnce('Move to project')
+    await sidebar.handleDrop(new SidebarItem('Unassigned', { kind: 'unassigned' }), {
+      get: () => ({ asString: async () => JSON.stringify(['ordinary']) })
+    } as never)
+    expect(api.unarchiveThreads).toHaveBeenCalledExactlyOnceWith(['ordinary'])
+    expect(api.assignThreads).toHaveBeenCalledWith(['ordinary'], null)
+    sidebar.dispose()
+  })
   it('does not bypass Trash restoration through a checked Unarchive action', async () => {
     const { api, sidebar, item } = setup()
     api.listProjects.mockResolvedValue({ projects: [trash], assignments: { ordinary: trash.id }, refreshedAt: 1 })
@@ -92,6 +171,7 @@ describe('Sidebar Trash actions', () => {
   })
   it('checkboxes select tasks and Clear Checked Tasks cancels the batch', async () => {
     const { api, sidebar } = setup()
+    sidebar.toggleMultiSelect()
     const collect = (items: SidebarItem[]): SidebarItem[] => items.flatMap((item) => [item, ...collect(item.children ?? [])])
     const item = collect(await sidebar.getChildren()).find((item) => item.thread)!
     sidebar.checkItems([[item, 1]])

@@ -2,7 +2,7 @@
   "name": "codex-threadbox-vscode",
   "displayName": "Codex Threadbox",
   "description": "Manage Codex tasks and projects from the native VS Code sidebar, locally or remotely.",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "publisher": "irisNeko",
   "license": "MIT",
   "private": true,
@@ -40,6 +40,13 @@
   "icon": "dist/icon.png",
   "contributes": {
     "commands": [
+      {
+        "command": "threadbox.toggleMultiSelect",
+        "title": "Toggle Multi-select Mode",
+        "category": "Threadbox",
+        "icon": "$(checklist)",
+        "toggled": "threadbox.multiSelectMode"
+      },
       {
         "command": "threadbox.refreshSidebar",
         "title": "Refresh",
@@ -278,64 +285,9 @@
           "group": "navigation@3"
         },
         {
-          "command": "threadbox.newProject",
+          "command": "threadbox.toggleMultiSelect",
           "when": "view =~ /^threadbox\\.sidebar/",
-          "group": "actions@0"
-        },
-        {
-          "command": "threadbox.importCurrentWorkspaceProject",
-          "when": "view =~ /^threadbox\\.sidebar/ && workspaceFolderCount > 0",
-          "group": "actions@1"
-        },
-        {
-          "command": "threadbox.sortSidebar",
-          "when": "view =~ /^threadbox\\.sidebar/",
-          "group": "actions@2"
-        },
-        {
-          "command": "threadbox.resetFilters",
-          "when": "view =~ /^threadbox\\.sidebar/",
-          "group": "actions@3"
-        },
-        {
-          "command": "threadbox.selectFiltered",
-          "when": "view =~ /^threadbox\\.sidebar/",
-          "group": "actions@4"
-        },
-        {
-          "command": "threadbox.clearSelection",
-          "when": "view =~ /^threadbox\\.sidebar/",
-          "group": "actions@5"
-        },
-        {
-          "command": "threadbox.moveSelected",
-          "when": "view =~ /^threadbox\\.sidebar/",
-          "group": "actions@6"
-        },
-        {
-          "command": "threadbox.archiveSelected",
-          "when": "view =~ /^threadbox\\.sidebar/",
-          "group": "actions@7"
-        },
-        {
-          "command": "threadbox.unarchiveSelected",
-          "when": "view =~ /^threadbox\\.sidebar/",
-          "group": "actions@8"
-        },
-        {
-          "command": "threadbox.trashSelected",
-          "when": "view =~ /^threadbox\\.sidebar/",
-          "group": "actions@9"
-        },
-        {
-          "command": "threadbox.restoreSelected",
-          "when": "view =~ /^threadbox\\.sidebar/",
-          "group": "actions@10"
-        },
-        {
-          "command": "threadbox.openSettings",
-          "when": "view =~ /^threadbox\\.sidebar/",
-          "group": "actions@11"
+          "group": "navigation@4"
         }
       ],
       "view/item/context": [
@@ -373,16 +325,6 @@
           "command": "threadbox.deleteProject",
           "when": "view =~ /^threadbox\\.sidebar/ && viewItem == threadbox.project.threadbox.mutable",
           "group": "project@2"
-        },
-        {
-          "command": "threadbox.moveToProject",
-          "when": "view =~ /^threadbox\\.sidebar/ && viewItem =~ /^threadbox\\.thread\\./",
-          "group": "inline@1"
-        },
-        {
-          "command": "threadbox.moveToProject",
-          "when": "view =~ /^threadbox\\.sidebar/ && viewItem =~ /^threadbox\\.group\\./",
-          "group": "inline@1"
         },
         {
           "command": "threadbox.moveToProject",
@@ -433,6 +375,41 @@
           "command": "threadbox.emptyTrash",
           "when": "view =~ /^threadbox\\.sidebar/ && viewItem == threadbox.project.threadbox.trash",
           "group": "danger@1"
+        },
+        {
+          "command": "threadbox.newProject",
+          "when": "view =~ /^threadbox\\.sidebar/ && viewItem =~ /^threadbox\\.(projects|project|group)/",
+          "group": "create@1"
+        },
+        {
+          "command": "threadbox.importCurrentWorkspaceProject",
+          "when": "view =~ /^threadbox\\.sidebar/ && viewItem =~ /^threadbox\\.(projects|project|group)/ && workspaceFolderCount > 0",
+          "group": "create@2"
+        },
+        {
+          "command": "threadbox.sortSidebar",
+          "when": "view =~ /^threadbox\\.sidebar/ && viewItem =~ /^threadbox\\.(projects|project|group)/",
+          "group": "view@1"
+        },
+        {
+          "command": "threadbox.resetFilters",
+          "when": "view =~ /^threadbox\\.sidebar/ && viewItem =~ /^threadbox\\.(projects|project|group)/",
+          "group": "view@2"
+        },
+        {
+          "command": "threadbox.openSettings",
+          "when": "view =~ /^threadbox\\.sidebar/ && viewItem =~ /^threadbox\\.(projects|project|group)/",
+          "group": "view@3"
+        },
+        {
+          "command": "threadbox.selectFiltered",
+          "when": "view =~ /^threadbox\\.sidebar/ && threadbox.multiSelectMode",
+          "group": "selection"
+        },
+        {
+          "command": "threadbox.clearSelection",
+          "when": "view =~ /^threadbox\\.sidebar/ && threadbox.multiSelectMode",
+          "group": "selection"
         }
       ]
     },

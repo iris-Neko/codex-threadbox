@@ -12,13 +12,16 @@ it('removes the Manager command, activation and Webview implementation', () => {
   expect(extension).not.toMatch(/createWebviewPanel|onDidReceiveMessage|webviewHtml/)
   expect(existsSync('packages/ui/src/App.tsx')).toBe(true)
 })
-it('keeps only search, filters and refresh in the top toolbar', () => {
+it('keeps search, filters, refresh and an opt-in multiselect button in the top toolbar', () => {
   const actions = manifest.contributes.menus['view/title'] as Array<{ command: string; group: string }>
   expect(actions.filter((c) => c.group.startsWith('navigation')).map((c) => c.command)).toEqual([
-    'threadbox.searchSidebar', 'threadbox.filterSidebar', 'threadbox.refreshSidebar'
+    'threadbox.searchSidebar', 'threadbox.filterSidebar', 'threadbox.refreshSidebar', 'threadbox.toggleMultiSelect'
   ])
-  expect(actions.some((c) => c.command === 'threadbox.openSettings')).toBe(true)
-  expect(actions.some((c) => c.command === 'threadbox.selectFiltered')).toBe(true)
+  expect(actions.some((c) => c.command === 'threadbox.trashSelected')).toBe(false)
+  const context = manifest.contributes.menus['view/item/context'] as Array<{ command: string; group: string }>
+  expect(context.some((c) => c.command === 'threadbox.openSettings')).toBe(true)
+  expect(context.some((c) => c.command === 'threadbox.selectFiltered')).toBe(true)
+  expect(context.some((c) => c.command === 'threadbox.moveToProject' && c.group.startsWith('inline'))).toBe(false)
 })
 it('retains native workspace trust guards after removing Webview RPC', () => {
   expect(() => requireWorkspaceTrust(false)).toThrow()
