@@ -1,5 +1,5 @@
 import { build } from 'esbuild'
-import { copyFile, mkdir, readFile, rm } from 'node:fs/promises'
+import { copyFile, mkdir, rm } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
 const packageRoot = resolve(import.meta.dirname, '..')
@@ -21,17 +21,7 @@ await Promise.all([
     external: ['vscode'],
     legalComments: 'none'
   }),
-  build({
-    entryPoints: [resolve(packageRoot, 'src/webview.tsx')],
-    outfile: resolve(dist, 'webview.js'),
-    bundle: true,
-    platform: 'browser',
-    format: 'iife',
-    target: 'es2022',
-    jsx: 'automatic',
-    legalComments: 'none',
-    loader: { '.css': 'css' }
-  }),
+
   build({
     entryPoints: [resolve(packageRoot, 'src/test/index.ts')],
     outfile: resolve(testDist, 'index.cjs'),
@@ -46,8 +36,3 @@ await Promise.all([
   copyFile(resolve(packageRoot, 'scripts/writer-recovery.py'), resolve(dist, 'writer-recovery.py')),
   copyFile(resolve(packageRoot, '../../resources/activitybar.svg'), resolve(dist, 'activitybar.svg'))
 ])
-
-const webviewBundle = await readFile(resolve(dist, 'webview.js'), 'utf8')
-if (webviewBundle.includes('React.createElement(')) {
-  throw new Error('Webview bundle contains classic JSX output without a guaranteed React binding.')
-}

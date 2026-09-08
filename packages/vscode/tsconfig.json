@@ -1,16 +1,19 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "jsx": "react-jsx",
-    "types": ["node", "vscode"]
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "node",
+      "vscode"
+    ]
   },
   "include": [
     "src/**/*.ts",
-    "src/**/*.tsx",
     "../core/src/**/*.ts",
-    "../ui/src/**/*.ts",
-    "../ui/src/**/*.tsx",
     "../../src/shared/**/*.ts"
   ]
 }

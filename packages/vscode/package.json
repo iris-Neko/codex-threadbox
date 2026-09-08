@@ -1,8 +1,8 @@
 {
   "name": "codex-threadbox-vscode",
   "displayName": "Codex Threadbox",
-  "description": "Manage Codex tasks locally, including on Remote SSH, Dev Containers, and Codespaces.",
-  "version": "0.9.7",
+  "description": "Manage Codex tasks and projects from the native VS Code sidebar, locally or remotely.",
+  "version": "0.10.0",
   "publisher": "irisNeko",
   "license": "MIT",
   "private": true,
@@ -32,7 +32,6 @@
   ],
   "activationEvents": [
     "onStartupFinished",
-    "onCommand:threadbox.openManager",
     "onView:threadbox.sidebar",
     "onView:threadbox.sidebar.codexPrimary",
     "onView:threadbox.sidebar.codexSecondary"
@@ -41,12 +40,6 @@
   "icon": "dist/icon.png",
   "contributes": {
     "commands": [
-      {
-        "command": "threadbox.openManager",
-        "title": "Open Manager",
-        "category": "Threadbox",
-        "icon": "$(open-preview)"
-      },
       {
         "command": "threadbox.refreshSidebar",
         "title": "Refresh",
@@ -162,6 +155,72 @@
         "title": "Open in Codex",
         "category": "Threadbox",
         "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "threadbox.filterSidebar",
+        "title": "Filter Tasks...",
+        "category": "Threadbox",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "threadbox.sortSidebar",
+        "title": "Sort Tasks...",
+        "category": "Threadbox",
+        "icon": "$(sort-precedence)"
+      },
+      {
+        "command": "threadbox.resetFilters",
+        "title": "Clear All Filters",
+        "category": "Threadbox",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "threadbox.selectFiltered",
+        "title": "Select Filtered Tasks (excluding Trash)",
+        "category": "Threadbox",
+        "icon": "$(check-all)"
+      },
+      {
+        "command": "threadbox.clearSelection",
+        "title": "Clear Checked Tasks",
+        "category": "Threadbox",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "threadbox.openSettings",
+        "title": "Open Settings",
+        "category": "Threadbox",
+        "icon": "$(settings-gear)"
+      },
+      {
+        "command": "threadbox.trashSelected",
+        "title": "Move Checked Tasks to Trash...",
+        "category": "Threadbox",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "threadbox.archiveSelected",
+        "title": "Archive Checked Tasks...",
+        "category": "Threadbox",
+        "icon": "$(archive)"
+      },
+      {
+        "command": "threadbox.unarchiveSelected",
+        "title": "Unarchive Checked Tasks...",
+        "category": "Threadbox",
+        "icon": "$(archive)"
+      },
+      {
+        "command": "threadbox.restoreSelected",
+        "title": "Restore Checked Tasks from Trash...",
+        "category": "Threadbox",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "threadbox.moveSelected",
+        "title": "Move Checked Tasks to Project...",
+        "category": "Threadbox",
+        "icon": "$(folder-opened)"
       }
     ],
     "viewsContainers": {
@@ -204,34 +263,79 @@
     "menus": {
       "view/title": [
         {
-          "command": "threadbox.openManager",
+          "command": "threadbox.searchSidebar",
           "when": "view =~ /^threadbox\\.sidebar/",
           "group": "navigation@1"
         },
         {
-          "command": "threadbox.searchSidebar",
+          "command": "threadbox.filterSidebar",
           "when": "view =~ /^threadbox\\.sidebar/",
           "group": "navigation@2"
         },
         {
-          "command": "threadbox.clearSidebarSearch",
-          "when": "view =~ /^threadbox\\.sidebar/ && threadbox.searchActive",
-          "group": "navigation@3"
-        },
-        {
           "command": "threadbox.refreshSidebar",
           "when": "view =~ /^threadbox\\.sidebar/",
-          "group": "navigation@4"
+          "group": "navigation@3"
         },
         {
           "command": "threadbox.newProject",
           "when": "view =~ /^threadbox\\.sidebar/",
-          "group": "navigation@5"
+          "group": "actions@0"
         },
         {
           "command": "threadbox.importCurrentWorkspaceProject",
           "when": "view =~ /^threadbox\\.sidebar/ && workspaceFolderCount > 0",
-          "group": "navigation@6"
+          "group": "actions@1"
+        },
+        {
+          "command": "threadbox.sortSidebar",
+          "when": "view =~ /^threadbox\\.sidebar/",
+          "group": "actions@2"
+        },
+        {
+          "command": "threadbox.resetFilters",
+          "when": "view =~ /^threadbox\\.sidebar/",
+          "group": "actions@3"
+        },
+        {
+          "command": "threadbox.selectFiltered",
+          "when": "view =~ /^threadbox\\.sidebar/",
+          "group": "actions@4"
+        },
+        {
+          "command": "threadbox.clearSelection",
+          "when": "view =~ /^threadbox\\.sidebar/",
+          "group": "actions@5"
+        },
+        {
+          "command": "threadbox.moveSelected",
+          "when": "view =~ /^threadbox\\.sidebar/",
+          "group": "actions@6"
+        },
+        {
+          "command": "threadbox.archiveSelected",
+          "when": "view =~ /^threadbox\\.sidebar/",
+          "group": "actions@7"
+        },
+        {
+          "command": "threadbox.unarchiveSelected",
+          "when": "view =~ /^threadbox\\.sidebar/",
+          "group": "actions@8"
+        },
+        {
+          "command": "threadbox.trashSelected",
+          "when": "view =~ /^threadbox\\.sidebar/",
+          "group": "actions@9"
+        },
+        {
+          "command": "threadbox.restoreSelected",
+          "when": "view =~ /^threadbox\\.sidebar/",
+          "group": "actions@10"
+        },
+        {
+          "command": "threadbox.openSettings",
+          "when": "view =~ /^threadbox\\.sidebar/",
+          "group": "actions@11"
         }
       ],
       "view/item/context": [

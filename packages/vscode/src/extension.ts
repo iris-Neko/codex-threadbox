@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto'
 import { basename, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import * as vscode from 'vscode'
@@ -29,7 +28,6 @@ import {
   SUDO_NPM_UNINSTALL_COMMAND,
   SUDO_NPM_UPDATE_COMMAND
 } from './codex-update'
-import { parseRpcRequest, type RpcRequest, type RpcResponse } from './rpc'
 import { ProjectStore } from './project-store'
 import { SidebarItem, ThreadboxSidebarProvider } from './sidebar'
 import {
@@ -45,7 +43,6 @@ import { knownCodexExecutables, LinuxWriterRecovery } from './linux-writer-recov
 import { recoverWriterAndTrash } from './writer-recovery'
 
 const CONFIGURATION = 'threadbox'
-const COMMAND = 'threadbox.openManager'
 const REFRESH_SIDEBAR_COMMAND = 'threadbox.refreshSidebar'
 const SEARCH_SIDEBAR_COMMAND = 'threadbox.searchSidebar'
 const CLEAR_SEARCH_COMMAND = 'threadbox.clearSidebarSearch'
@@ -569,65 +566,14 @@ function createApi(runtime: RuntimeHost, projects: ProjectStore): ThreadboxApi {
   }
 }
 
-async function dispatch(api: ThreadboxApi, request: RpcRequest): Promise<unknown> {
-  const method = api[request.method] as (...args: never[]) => Promise<unknown>
-  return method(...request.args as never[])
-}
 
-function webviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
-  const nonce = randomBytes(24).toString('base64')
-  const script = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'dist', 'webview.js'))
-  const style = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'dist', 'webview.css'))
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
-  <link rel="stylesheet" href="${style}">
-  <title>Threadbox for Codex</title>
-</head>
-<body>
-  <div id="root"></div>
-  <script nonce="${nonce}" src="${script}"></script>
-</body>
-</html>`
-}
-
-function attachRpc(
-  panel: vscode.WebviewPanel,
-  api: ThreadboxApi,
-  onMutation: () => void
-): vscode.Disposable {
-  return panel.webview.onDidReceiveMessage(async (message: unknown) => {
-    const request = parseRpcRequest(message)
-    if (!request) return
-    let response: RpcResponse
-    try {
-      response = { kind: 'threadbox.response', id: request.id, ok: true, value: await dispatch(api, request) }
-    } catch (error) {
-      response = {
-        kind: 'threadbox.response',
-        id: request.id,
-        ok: false,
-        error: error instanceof Error ? error.message : String(error)
-      }
-    }
-    if (['deleteThreads', 'trashThreads', 'restoreThreadsFromTrash', 'emptyTrash',
-      'archiveThreads', 'unarchiveThreads', 'setPinned', 'updateSettings', 'renameThread',
-      'createProject', 'importCurrentWorkspaceProject', 'renameProject', 'deleteProject', 'assignThreads',
-      'createThreadInProject', 'updateCodexCli']
-      .includes(request.method)) onMutation()
-    await panel.webview.postMessage(response)
-  })
-}
 
 export interface ThreadboxExtensionApi {
   getThreadboxApi(): ThreadboxApi
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<ThreadboxExtensionApi> {
-  const version = String(context.extension.packageJSON.version ?? '0.9.7')
+  const version = String(context.extension.packageJSON.version ?? '0.10.0')
   const runtime = new RuntimeHost(version)
   await migrateLegacyProjectStorage(context.globalStorageUri.fsPath)
   const projects = new ProjectStore(join(context.globalStorageUri.fsPath, 'projects-v1.json'))
@@ -687,9 +633,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<Thread
     api,
     SIDEBAR_COMMANDS.openOnDoubleClick,
     SIDEBAR_COMMANDS.updateCodexCli,
-    vscode.env.language,
-    process.platform === 'linux' ? recover : undefined
+    configuredLocale(),
+    process.platform === 'linux' ? recover : undefined,
+    {
+      load: () => context.workspaceState.get('threadbox.sidebarView'),
+      save: (options) => context.workspaceState.update('threadbox.sidebarView', options),
+      directories: workspaceDirectories
+    }
   )
+  context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(() => { sidebar.clearSelection(); sidebar.refresh() }))
   const doubleClickGate = new DoubleClickGate()
   const codexExtension = vscode.extensions.getExtension(CODEX_EXTENSION_ID)
   const codexContainers = findKnownCodexViewContainers(codexExtension?.packageJSON)
@@ -707,10 +659,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<Thread
     treeDataProvider: sidebar,
     dragAndDropController: sidebar,
     canSelectMany: true,
+    manageCheckboxStateManually: true,
     showCollapseAll: true
   }))
-  let panel: vscode.WebviewPanel | null = null
   context.subscriptions.push(runtime, sidebar, ...sidebarViews)
+  for (const view of sidebarViews) context.subscriptions.push(
+    view.onDidChangeCheckboxState((event) => sidebar.checkItems(event.items))
+  )
   context.subscriptions.push(sidebar.onDidChangeSummary((summary) => {
     for (const view of sidebarViews) {
       view.badge = summary.taskCount > 0
@@ -726,12 +681,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<Thread
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
     if (event.affectsConfiguration('threadbox.codexBinary') ||
       event.affectsConfiguration('threadbox.codexHome')) runtime.reset()
-    if (event.affectsConfiguration(CONFIGURATION)) sidebar.refresh()
+    if (event.affectsConfiguration(CONFIGURATION)) sidebar.setLocale(configuredLocale())
   }))
   context.subscriptions.push(vscode.commands.registerCommand(REFRESH_SIDEBAR_COMMAND, () => {
     sidebar.refresh()
   }))
   context.subscriptions.push(
+    vscode.commands.registerCommand('threadbox.filterSidebar', () => sidebar.filter()),
+    vscode.commands.registerCommand('threadbox.sortSidebar', () => sidebar.sort()),
+    vscode.commands.registerCommand('threadbox.resetFilters', () => sidebar.resetFilters()),
+    vscode.commands.registerCommand('threadbox.selectFiltered', () => sidebar.selectFiltered()),
+    vscode.commands.registerCommand('threadbox.clearSelection', () => sidebar.clearSelection()),
+    vscode.commands.registerCommand('threadbox.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', '@ext:irisNeko.codex-threadbox-vscode')),
+    vscode.commands.registerCommand('threadbox.trashSelected', () => sidebar.deleteThreads([])),
+    vscode.commands.registerCommand('threadbox.archiveSelected', () => sidebar.archiveThreads([], true)),
+    vscode.commands.registerCommand('threadbox.unarchiveSelected', () => sidebar.archiveThreads([], false)),
+    vscode.commands.registerCommand('threadbox.restoreSelected', () => sidebar.restoreThreads([])),
+    vscode.commands.registerCommand('threadbox.moveSelected', () => sidebar.moveThreads([])),
     vscode.commands.registerCommand(SEARCH_SIDEBAR_COMMAND, () => sidebar.search()),
     vscode.commands.registerCommand(CLEAR_SEARCH_COMMAND, () => sidebar.clearSearch())
   )
@@ -790,29 +756,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Thread
       await vscode.commands.executeCommand(SIDEBAR_COMMANDS.openInCodex, threadId)
     })
   )
-  context.subscriptions.push(vscode.commands.registerCommand(COMMAND, () => {
-    if (panel) {
-      panel.reveal(vscode.ViewColumn.One)
-      return
-    }
-    panel = vscode.window.createWebviewPanel(
-      'threadbox.manager',
-      'Threadbox for Codex',
-      vscode.ViewColumn.One,
-      {
-        enableScripts: true,
-        retainContextWhenHidden: true,
-        localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist')]
-      }
-    )
-    panel.webview.html = webviewHtml(panel.webview, context.extensionUri)
-    const rpc = attachRpc(panel, api, () => sidebar.refresh())
-    panel.onDidDispose(() => {
-      rpc.dispose()
-      panel = null
-    })
-    sidebar.refresh()
-  }))
+
   return { getThreadboxApi: () => api }
 }
 

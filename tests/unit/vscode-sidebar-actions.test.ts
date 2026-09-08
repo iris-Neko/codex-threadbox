@@ -15,6 +15,7 @@ vi.mock('vscode', () => ({
   TreeItem: class { constructor(public label: string) {} },
   ThemeIcon: class { constructor(public id: string) {} },
   TreeItemCollapsibleState: { None: 0, Collapsed: 1 },
+  TreeItemCheckboxState: { Unchecked: 0, Checked: 1 },
   workspace: { get isTrusted() { return ui.trusted } },
   window: {
     showWarningMessage: ui.warning, showInformationMessage: ui.info, showErrorMessage: ui.error,
@@ -24,7 +25,7 @@ vi.mock('vscode', () => ({
   commands: { executeCommand: ui.command }
 }))
 
-import { SidebarItem, ThreadboxSidebarProvider } from '../../packages/vscode/src/sidebar'
+import { SidebarItem, ThreadboxSidebarProvider, type SidebarPreferences } from '../../packages/vscode/src/sidebar'
 import { ProjectAssignmentError } from '../../packages/vscode/src/operation-feedback'
 
 const thread: ThreadRecord = {
@@ -42,20 +43,20 @@ const environment = {
   state: 'ready', cliVersion: '0.153.4', cliPath: '/codex', minimumVersion: '0.153.3',
   capabilities: { pinning: false }, externalCodexProcesses: 0, message: null
 }
-function setup(recover?: (ids: string[]) => Promise<BatchOperationResult | null>) {
+function setup(recover?: (ids: string[]) => Promise<BatchOperationResult | null>, records = [thread], preferences?: SidebarPreferences) {
   const api = {
     renameThread: vi.fn(async () => undefined),
     trashThreads: vi.fn(async () => result),
     restoreThreadsFromTrash: vi.fn(async () => result),
     emptyTrash: vi.fn(async () => result),
     listThreads: vi.fn(async () => ({
-      threads: [thread], environment, inventory: { state: 'complete', message: null }, refreshedAt: 1
+      threads: records, environment, inventory: { state: 'complete', message: null }, refreshedAt: 1
     })),
     listProjects: vi.fn(async () => ({ projects: [trash], assignments: {}, refreshedAt: 1 })),
     getEnvironmentStatus: vi.fn(async () => environment),
     assignThreads: vi.fn()
   }
-  const sidebar = new ThreadboxSidebarProvider(api as unknown as ThreadboxApi, 'open', 'update', 'en', recover)
+  const sidebar = new ThreadboxSidebarProvider(api as unknown as ThreadboxApi, 'open', 'update', 'en', recover, preferences)
   return { api, sidebar, item: new SidebarItem(thread.title, { kind: 'thread', thread }) }
 }
 
@@ -68,6 +69,90 @@ beforeEach(() => {
 })
 
 describe('Sidebar Trash actions', () => {
+  it('does not bypass Trash restoration through a checked Unarchive action', async () => {
+    const { api, sidebar, item } = setup()
+    api.listProjects.mockResolvedValue({ projects: [trash], assignments: { ordinary: trash.id }, refreshedAt: 1 })
+    await sidebar.archiveThreads([item], false)
+    expect(ui.error).toHaveBeenCalledWith('Use Restore from Trash for tasks in Trash.')
+    sidebar.dispose()
+  })
+  it('persists ordering and scope, clears filters without touching task data', async () => {
+    const save = vi.fn(async () => undefined)
+    const { api, sidebar } = setup(undefined, [thread], {
+      load: () => ({ scope: 'workspace', archive: 'archived', sort: 'updated-asc' }),
+      save, directories: () => ['/work/app']
+    })
+    const collect = (items: SidebarItem[]): SidebarItem[] => items.flatMap((item) => [item, ...collect(item.children ?? [])])
+    expect(collect(await sidebar.getChildren()).some((item) => item.thread)).toBe(false)
+    await sidebar.resetFilters()
+    expect(save).toHaveBeenLastCalledWith({ scope: 'all', archive: 'all', sort: 'updated-asc' })
+    expect(collect(await sidebar.getChildren()).some((item) => item.thread?.id === thread.id)).toBe(true)
+    expect(api.trashThreads).not.toHaveBeenCalled()
+    sidebar.dispose()
+  })
+  it('checkboxes select tasks and Clear Checked Tasks cancels the batch', async () => {
+    const { api, sidebar } = setup()
+    const collect = (items: SidebarItem[]): SidebarItem[] => items.flatMap((item) => [item, ...collect(item.children ?? [])])
+    const item = collect(await sidebar.getChildren()).find((item) => item.thread)!
+    sidebar.checkItems([[item, 1]])
+    expect(collect(await sidebar.getChildren()).find((item) => item.thread)?.checkboxState).toBe(1)
+    sidebar.clearSelection()
+    await sidebar.deleteThreads([])
+    expect(api.trashThreads).not.toHaveBeenCalled()
+    expect(collect(await sidebar.getChildren()).find((item) => item.thread)?.checkboxState).toBe(0)
+    sidebar.dispose()
+  })
+  it('keeps checkbox context ancestors unselected under archive filters', async () => {
+    const { sidebar } = setup(undefined, [thread, { ...thread, id: 'archived-child', archived: true,
+      parentThreadId: thread.id, internal: true, source: 'subAgentThreadSpawn' }])
+    await sidebar.setView({ archive: 'archived' })
+    await sidebar.selectFiltered()
+    const collect = (items: SidebarItem[]): SidebarItem[] => items.flatMap((item) => [item, ...collect(item.children ?? [])])
+    const items = collect(await sidebar.getChildren())
+    expect(items.find((item) => item.thread?.id === thread.id)?.checkboxState).toBeUndefined()
+    expect(items.find((item) => item.thread?.id === 'archived-child')?.checkboxState).toBe(1)
+    sidebar.dispose()
+  })
+  it('selects filtered matches only and clears selection when filters change', async () => {
+    const records = [thread, { ...thread, id: 'archived', archived: true }, { ...thread, id: 'trashed', archived: true }]
+    const { api, sidebar } = setup(undefined, records)
+    api.listProjects.mockResolvedValue({ projects: [trash], assignments: { trashed: trash.id }, refreshedAt: 1 })
+    await sidebar.setView({ archive: 'active' })
+    await sidebar.selectFiltered()
+    await sidebar.deleteThreads([])
+    expect(api.trashThreads).toHaveBeenCalledExactlyOnceWith(['ordinary'])
+    await sidebar.selectFiltered()
+    await sidebar.setView({ archive: 'archived' })
+    await sidebar.deleteThreads([])
+    expect(api.trashThreads).toHaveBeenCalledOnce()
+    sidebar.dispose()
+  })
+  it('includes hidden descendants in confirmation but not unrelated filtered roots', async () => {
+    const records = [thread, { ...thread, id: 'child', parentThreadId: thread.id, archived: true, internal: true, source: 'subAgentThreadSpawn' }]
+    const { api, sidebar } = setup(undefined, records)
+    await sidebar.setView({ archive: 'active' })
+    await sidebar.selectFiltered()
+    await sidebar.deleteThreads([])
+    expect(ui.warning.mock.calls[0]?.[1]).toMatchObject({ modal: true, detail: expect.stringContaining('1 descendant tasks') })
+    expect(api.trashThreads).toHaveBeenCalledExactlyOnceWith(['ordinary'])
+    sidebar.dispose()
+  })
+  it('does not change task state when trust is revoked during confirmation', async () => {
+    const { api, sidebar, item } = setup()
+    ui.warning.mockImplementationOnce(async () => { ui.trusted = false; return 'Move to Trash' })
+    await sidebar.deleteThreads([item])
+    expect(api.trashThreads).not.toHaveBeenCalled()
+    expect(ui.error).toHaveBeenCalled()
+    sidebar.dispose()
+  })
+  it('does not mutate using partial inventories', async () => {
+    const { api, sidebar, item } = setup()
+    api.listThreads.mockResolvedValue({ threads: [thread], environment, inventory: { state: 'partial', message: 'Missing page' }, refreshedAt: 1 } as never)
+    await sidebar.deleteThreads([item])
+    expect(api.trashThreads).not.toHaveBeenCalled()
+    expect(ui.error).toHaveBeenCalledWith('Missing page')
+    sidebar.dispose()
+  })
   it('renames a task and reloads without waiting for the success notification', async () => {
     const { api, sidebar, item } = setup()
     ui.input.mockResolvedValue(' Renamed task ')
@@ -93,6 +178,7 @@ describe('Sidebar Trash actions', () => {
       { id: thread.id, message: 'thread ordinary already has an active writer' }
     ] }
     api.restoreThreadsFromTrash.mockResolvedValue(failure)
+    ui.warning.mockResolvedValueOnce('Restore from Trash').mockResolvedValueOnce(undefined)
     await sidebar.restoreThreads([item])
     expect(ui.warning.mock.calls.at(-1)).not.toContain('Release Writer and Retry')
     api.emptyTrash.mockResolvedValue(failure)
@@ -182,7 +268,7 @@ describe('Sidebar Trash actions', () => {
     const { api, sidebar, item } = setup()
     await sidebar.deleteThreads([item])
     expect(api.trashThreads).toHaveBeenCalledWith(['ordinary'])
-    expect(api.listThreads).toHaveBeenCalledOnce()
+    expect(api.listThreads).toHaveBeenCalledTimes(2)
     expect(ui.info).toHaveBeenCalledWith('1 succeeded, 0 failed, 0 skipped.')
     sidebar.dispose()
   })
@@ -202,7 +288,7 @@ describe('Sidebar Trash actions', () => {
     await sidebar.handleDrop(new SidebarItem('Trash', { kind: 'project', project: trash }), {
       get: () => ({ asString: async () => JSON.stringify(['ordinary']) })
     } as never)
-    expect(api.listThreads).toHaveBeenCalledTimes(2)
+    expect(api.listThreads).toHaveBeenCalledTimes(3)
     expect(ui.warning).toHaveBeenCalledWith(expect.stringContaining('Ordinary task: Active threads'), 'View Details')
     sidebar.dispose()
   })

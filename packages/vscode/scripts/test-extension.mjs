@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { runTests, downloadAndUnzipVSCode } from '@vscode/test-electron'
@@ -21,6 +21,12 @@ const fakeLog = join(workspace, 'fake-app-server.log')
 const fakeCreatedFile = join(workspace, 'fake-created-threads.json')
 
 try {
+  const assets = await readdir(resolve(packageRoot, 'dist'))
+  if (assets.some((name) => name.startsWith('webview'))) throw new Error('Manager Webview assets remain in the extension.')
+  const bundle = await readFile(resolve(packageRoot, 'dist/extension.cjs'), 'utf8')
+  if (bundle.includes('createWebviewPanel') || bundle.includes('acquireVsCodeApi')) {
+    throw new Error('The sidebar extension still contains a Manager entry point.')
+  }
   const vscodeExecutablePath = await downloadAndUnzipVSCode('stable')
   const vscodeCliPath = resolve(
     dirname(vscodeExecutablePath),

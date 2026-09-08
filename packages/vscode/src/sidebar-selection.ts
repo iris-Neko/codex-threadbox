@@ -49,7 +49,10 @@ export function filterSidebarThreads(
   return visible.filter((thread) => included.has(thread.id))
 }
 
-export function buildVisibleThreadHierarchy(threads: readonly ThreadRecord[]): ThreadHierarchyNode[] {
+export function buildVisibleThreadHierarchy(
+  threads: readonly ThreadRecord[],
+  compare: (a: ThreadRecord, b: ThreadRecord) => number = (a, b) => b.updatedAt - a.updatedAt
+): ThreadHierarchyNode[] {
   const visible = threads.filter(visibleThread)
   const nodes = new Map(visible.map((thread) => [thread.id, { thread, children: [] } as ThreadHierarchyNode]))
   const roots: ThreadHierarchyNode[] = []
@@ -59,7 +62,7 @@ export function buildVisibleThreadHierarchy(threads: readonly ThreadRecord[]): T
     else if (!node.thread.internal) roots.push(node)
   }
   const sort = (items: ThreadHierarchyNode[]): ThreadHierarchyNode[] => items
-    .sort((left, right) => right.thread.updatedAt - left.thread.updatedAt)
+    .sort((left, right) => compare(left.thread, right.thread))
     .map((item) => ({ ...item, children: sort(item.children) }))
   return sort(roots)
 }

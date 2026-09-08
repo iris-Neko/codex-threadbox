@@ -9,12 +9,11 @@ import type {
   ThreadboxApi,
   ThreadRecord
 } from '../../../src/shared/contracts'
-import { groupThreads } from '../../core/src/thread-utils'
+import { groupThreads, resolveThreadSelection, deselectThreadSubtrees, toggleThreadSelection } from '../../core/src/thread-utils'
 import {
   actionableRootIds,
   buildVisibleThreadHierarchy,
   collectThreadIds,
-  filterSidebarThreads,
   manualMoveTargets,
   selectedRootIds,
   type ThreadHierarchyNode
@@ -22,6 +21,7 @@ import {
 import { batchNotice, ProjectAssignmentError } from './operation-feedback'
 import { requireWorkspaceTrust } from './workspace-trust'
 import { normalizeThreadName } from '../../../src/shared/thread-name'
+import { DEFAULT_SIDEBAR_VIEW, parseSidebarView, sidebarMatches, sidebarOrder, selectionDetails, taskTooltip, type SidebarViewOptions } from './sidebar-view'
 
 const SETTINGS_COMMAND = 'workbench.action.openSettings'
 const TREE_MIME = 'application/vnd.code.tree.threadbox.sidebar'
@@ -83,7 +83,7 @@ function labels(locale: string): SidebarLabels {
       moveToTrashConfirm: '任务会移入垃圾箱并归档，工作目录会保留。', moveToTrash: '移入垃圾箱',
       restoreFromTrash: '从垃圾箱恢复', emptyTrash: '清空垃圾箱',
       emptyTrashConfirm: '垃圾箱中的任务记录将永久删除，工作目录会保留。',
-      noEligibleTasks: '所选任务正在运行、已置顶或已经在垃圾箱中。',
+      noEligibleTasks: '请先选择或勾选对话。',
       search: '搜索任务',
       searchPlaceholder: '标题、摘要、目录、来源、ID 或项目', noResults: '没有匹配的任务',
       createAndMove: '新建项目并移动'
@@ -105,7 +105,7 @@ function labels(locale: string): SidebarLabels {
     trash: 'Trash', moveToTrashConfirm: 'Tasks will be archived and moved to Trash. Working directories will be kept.',
     moveToTrash: 'Move to Trash', restoreFromTrash: 'Restore from Trash', emptyTrash: 'Empty Trash',
     emptyTrashConfirm: 'Task records in Trash will be permanently deleted. Working directories will be kept.',
-    noEligibleTasks: 'The selected tasks are running, pinned, or already in Trash.',
+    noEligibleTasks: 'Select or check one or more tasks first.',
     search: 'Search tasks',
     searchPlaceholder: 'Title, preview, directory, source, ID, or project', noResults: 'No matching tasks',
     createAndMove: 'Create project and move'
@@ -127,6 +127,8 @@ interface SidebarItemOptions {
   thread?: ThreadRecord
   id?: string
   selectionIds?: string[]
+  checked?: boolean
+  expanded?: boolean
 }
 
 export class SidebarItem extends vscode.TreeItem {
@@ -151,10 +153,19 @@ export class SidebarItem extends vscode.TreeItem {
     this.project = options.project
     this.thread = options.thread
     this.selectionIds = options.selectionIds
+    if (options.checked !== undefined) this.checkboxState = options.checked
+      ? vscode.TreeItemCheckboxState.Checked : vscode.TreeItemCheckboxState.Unchecked
+    if (options.expanded && options.children?.length) this.collapsibleState = vscode.TreeItemCollapsibleState.Expanded
   }
 }
 
 export interface SidebarSummary { taskCount: number; tooltip: string }
+
+export interface SidebarPreferences {
+  load(): unknown
+  save(options: SidebarViewOptions): PromiseLike<void>
+  directories(): readonly string[]
+}
 
 interface LoadedSidebarData {
   result: ListThreadsResult
@@ -172,6 +183,11 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
   private searchQuery = ''
   private operationLog: vscode.OutputChannel | null = null
   private disposed = false
+  private options: SidebarViewOptions = { ...DEFAULT_SIDEBAR_VIEW }
+  private checked = new Set<string>()
+  private matches = new Set<string>()
+  private trashMatches = new Set<string>()
+  private effectiveChecked = new Set<string>()
 
   readonly onDidChangeTreeData = this.changed.event
   readonly onDidChangeSummary = this.summaryChanged.event
@@ -183,9 +199,75 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
     private readonly api: ThreadboxApi,
     private readonly openThreadCommand: string,
     private readonly updateCodexCliCommand: string,
-    private readonly locale: string,
-    private readonly recoverWriter?: (ids: string[]) => Promise<BatchOperationResult | null>
-  ) {}
+    private locale: string,
+    private readonly recoverWriter?: (ids: string[]) => Promise<BatchOperationResult | null>,
+    private readonly preferences?: SidebarPreferences
+  ) { this.options = parseSidebarView(preferences?.load()) }
+
+  setLocale(locale: string): void { this.locale = locale; this.refresh() }
+
+  async filter(): Promise<void> {
+    const zh = this.locale.toLowerCase().startsWith('zh')
+    const choices = [
+      { label: zh ? '全部工作区' : 'All workspaces', change: { scope: 'all' as const } },
+      ...(this.preferences?.directories().length ? [{ label: zh ? '当前工作区' : 'Current workspace', change: { scope: 'workspace' as const } }] : []),
+      { label: zh ? '全部归档状态' : 'All archive states', change: { archive: 'all' as const } },
+      { label: zh ? '仅未归档' : 'Unarchived only', change: { archive: 'active' as const } },
+      { label: zh ? '仅已归档' : 'Archived only', change: { archive: 'archived' as const } }
+    ]
+    const picked = await vscode.window.showQuickPick(choices, { placeHolder: zh ? '筛选对话（垃圾箱单独显示）' : 'Filter tasks (Trash stays separate)' })
+    if (picked) await this.setView(picked.change)
+  }
+
+  async sort(): Promise<void> {
+    const zh = this.locale.toLowerCase().startsWith('zh')
+    const picked = await vscode.window.showQuickPick([
+      { label: zh ? '最近更新' : 'Recently updated', value: 'updated-desc' as const },
+      { label: zh ? '最久未更新' : 'Oldest updated', value: 'updated-asc' as const },
+      { label: zh ? '按名称' : 'Name', value: 'title-asc' as const }
+    ], { placeHolder: zh ? '排序' : 'Sort tasks' })
+    if (picked) await this.setView({ sort: picked.value })
+  }
+
+  async setView(change: Partial<SidebarViewOptions>): Promise<void> {
+    this.options = parseSidebarView({ ...this.options, ...change })
+    this.checked.clear()
+    await this.preferences?.save(this.options)
+    this.redraw()
+  }
+
+  async resetFilters(): Promise<void> {
+    this.searchQuery = ''
+    await this.setView({ scope: 'all', archive: 'all' })
+  }
+
+  async selectFiltered(): Promise<void> {
+    await this.getChildren()
+    this.checked = resolveThreadSelection(this.loaded?.result.threads ?? [],
+      [...this.matches].filter((id) => !this.trashMatches.has(id))).roots
+    this.redraw()
+  }
+
+  clearSelection(): void { this.checked.clear(); this.redraw() }
+
+  checkItems(changes: readonly [SidebarItem, vscode.TreeItemCheckboxState][]): void {
+    const threads = this.loaded?.result.threads ?? []
+    for (const [item, state] of changes) {
+      const id = item.thread?.id
+      if (!id || !this.matches.has(id)) continue
+      if (state === vscode.TreeItemCheckboxState.Checked) this.checked = toggleThreadSelection(threads, this.checked, id)
+      else this.checked = deselectThreadSubtrees(threads, this.checked, [id])
+    }
+    this.redraw()
+  }
+
+  private description(): string {
+    const zh = this.locale.toLowerCase().startsWith('zh')
+    return [this.searchQuery, this.options.scope === 'workspace' ? zh ? '当前工作区' : 'Current workspace' : '',
+      this.options.archive === 'all' ? '' : this.options.archive === 'active' ? zh ? '未归档' : 'Unarchived' : zh ? '已归档' : 'Archived',
+      this.options.sort === 'updated-asc' ? zh ? '最久未更新' : 'Oldest first' : this.options.sort === 'title-asc' ? zh ? '按名称' : 'By name' : '',
+      this.checked.size ? (zh ? '已勾选 ' : 'Checked ') + this.checked.size : ''].filter(Boolean).join(' · ')
+  }
 
   refresh(): void { this.loaded = null; this.redraw() }
 
@@ -232,12 +314,13 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
   private setSearchQuery(value: string): void {
     if (value === this.searchQuery) return
     this.searchQuery = value
-    this.searchChanged.fire(value.trim())
+    this.checked.clear()
     if (this.loaded) this.redraw()
   }
 
   private redraw(): void {
     this.cached = null
+    this.searchChanged.fire(this.description())
     this.changed.fire(undefined)
   }
 
@@ -422,15 +505,36 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
   }
 
   private selectedIds(items: readonly SidebarItem[]): string[] {
-    return [...new Set(items.flatMap((item) => item.selectionIds ?? collectThreadIds([item])))]
+    if (!items.length) return [...this.checked]
+    return [...new Set(items.flatMap((item) => item.thread ? [item.thread.id] : item.selectionIds ?? collectThreadIds([item])))]
   }
 
   private async assignAndRefresh(ids: string[], projectId: string | null): Promise<void> {
-    try {
-      this.updateSnapshot(await this.api.assignThreads(ids, projectId))
-    } finally {
-      await this.refreshNow()
+    const scope = await this.operationScope(ids)
+    const trash = this.snapshot.projects.some((project) => project.id === projectId && project.systemKind === 'trash')
+    if (trash || scope.descendants > 0 || scope.roots.length > 1) {
+      const copy = labels(this.locale)
+      const action = trash ? copy.moveToTrash : copy.moveToProject
+      if (await vscode.window.showWarningMessage(action, { modal: true, detail: scope.detail }, action) !== action) return
     }
+    requireWorkspaceTrust(vscode.workspace.isTrusted)
+    try { this.updateSnapshot(await this.api.assignThreads(scope.roots, projectId)) }
+    finally { this.checked.clear(); await this.refreshNow() }
+  }
+
+  private async operationScope(ids: string[]): Promise<{ roots: string[]; detail: string; descendants: number }> {
+    requireWorkspaceTrust(vscode.workspace.isTrusted)
+    const result = await this.api.listThreads()
+    requireWorkspaceTrust(vscode.workspace.isTrusted)
+    if (result.inventory.state !== 'complete') throw new Error(result.inventory.message ?? 'Task inventory is incomplete. Refresh and retry.')
+    if (ids.some((id) => !result.threads.some((thread) => thread.id === id))) throw new Error('A selected task no longer exists. Refresh and retry.')
+    this.loaded = { result, snapshot: await this.api.listProjects() }
+    requireWorkspaceTrust(vscode.workspace.isTrusted)
+    this.snapshot = this.loaded.snapshot
+    const roots = selectedRootIds(result.threads, ids)
+    const selection = resolveThreadSelection(result.threads, roots)
+    return { roots, descendants: selection.implicit.size,
+      detail: selectionDetails(result.threads, roots, this.locale.toLowerCase().startsWith('zh')) }
   }
 
   private async finishBatch(
@@ -438,6 +542,7 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
     retry?: (ids: string[]) => Promise<BatchOperationResult>,
     recoverToTrash = false
   ): Promise<void> {
+    this.checked.clear()
     await this.refreshNow()
     this.reportBatch(result, retry, recoverToTrash)
   }
@@ -487,13 +592,18 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
   }
 
   async archiveThreads(items: readonly SidebarItem[], archived: boolean): Promise<void> {
-    const threads = items.flatMap((item) => item.thread ? [item.thread] : [])
-      .filter((thread) => thread.status !== 'active' && thread.archived !== archived)
-    if (threads.length === 0) return
+    const ids = this.selectedIds(items)
+    if (!ids.length) return
     try {
-      if (archived) await this.api.archiveThreads(threads.map((thread) => thread.id))
-      else await this.api.unarchiveThreads(threads.map((thread) => thread.id))
-      this.refresh()
+      const scope = await this.operationScope(ids)
+      const trashId = this.snapshot.projects.find((project) => project.systemKind === 'trash')?.id
+      if (trashId && scope.roots.some((id) => this.snapshot.assignments[id] === trashId)) {
+        throw new Error(this.locale.startsWith('zh') ? '垃圾箱中的对话请使用“从垃圾箱恢复”。' : 'Use Restore from Trash for tasks in Trash.')
+      }
+      const action = archived ? (this.locale.startsWith('zh') ? '归档' : 'Archive') : (this.locale.startsWith('zh') ? '取消归档' : 'Unarchive')
+      if (await vscode.window.showWarningMessage(action, { modal: true, detail: scope.detail }, action) !== action) return
+      requireWorkspaceTrust(vscode.workspace.isTrusted)
+      await this.finishBatch(archived ? await this.api.archiveThreads(scope.roots) : await this.api.unarchiveThreads(scope.roots))
     } catch (error) { await this.showError(error) }
   }
 
@@ -507,37 +617,47 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
 
   async deleteThreads(items: readonly SidebarItem[]): Promise<void> {
     const copy = labels(this.locale)
-    const ids = items.flatMap((item) => item.thread ? [item.thread.id] : [])
-    if (ids.length === 0) { await vscode.window.showWarningMessage(copy.noEligibleTasks); return }
-    const confirmed = await vscode.window.showWarningMessage(
-      `${copy.moveToTrashConfirm}\n\n${ids.length}`, { modal: true }, copy.moveToTrash)
-    if (confirmed !== copy.moveToTrash) return
+    const ids = this.selectedIds(items)
+    if (!ids.length) { void vscode.window.showWarningMessage(copy.noEligibleTasks); return }
     try {
+      const scope = await this.operationScope(ids)
+      const confirmed = await vscode.window.showWarningMessage(copy.moveToTrashConfirm,
+        { modal: true, detail: scope.detail }, copy.moveToTrash)
+      if (confirmed !== copy.moveToTrash) return
+      requireWorkspaceTrust(vscode.workspace.isTrusted)
       const move = (targets: string[]): Promise<BatchOperationResult> => this.api.trashThreads
-        ? this.api.trashThreads(targets)
-        : this.api.deleteThreads(targets, { trashWorkingDirectories: [] })
-      await this.finishBatch(await move(ids), move, true)
+        ? this.api.trashThreads(targets) : this.api.deleteThreads(targets, { trashWorkingDirectories: [] })
+      await this.finishBatch(await move(scope.roots), move, true)
     } catch (error) { await this.showError(error) }
   }
 
   async restoreThreads(items: readonly SidebarItem[]): Promise<void> {
-    const ids = items.flatMap((item) => item.thread ? [item.thread.id] : [])
-    if (ids.length === 0 || !this.api.restoreThreadsFromTrash) return
+    const ids = this.selectedIds(items)
+    if (!ids.length || !this.api.restoreThreadsFromTrash) return
     try {
-      const result = await this.api.restoreThreadsFromTrash(ids)
-      await this.finishBatch(result, (targets) => this.api.restoreThreadsFromTrash!(targets))
+      const scope = await this.operationScope(ids)
+      const copy = labels(this.locale)
+      if (await vscode.window.showWarningMessage(copy.restoreFromTrash,
+        { modal: true, detail: scope.detail }, copy.restoreFromTrash) !== copy.restoreFromTrash) return
+      requireWorkspaceTrust(vscode.workspace.isTrusted)
+      await this.finishBatch(await this.api.restoreThreadsFromTrash(scope.roots), (targets) => this.api.restoreThreadsFromTrash!(targets))
     } catch (error) { await this.showError(error) }
   }
 
   async emptyTrash(item?: SidebarItem): Promise<void> {
     if (item?.project?.systemKind !== 'trash' || !this.api.emptyTrash) return
     const copy = labels(this.locale)
-    const confirmed = await vscode.window.showWarningMessage(
-      copy.emptyTrashConfirm, { modal: true }, copy.emptyTrash)
-    if (confirmed !== copy.emptyTrash) return
     try {
-      const result = await this.api.emptyTrash()
-      await this.finishBatch(result)
+      requireWorkspaceTrust(vscode.workspace.isTrusted)
+      const listed = await this.api.listThreads()
+      if (listed.inventory.state !== 'complete') throw new Error('Task inventory is incomplete.')
+      const projects = await this.api.listProjects()
+      const ids = Object.entries(projects.assignments).filter(([, id]) => id === item.project!.id).map(([id]) => id)
+      const detail = (this.locale.startsWith('zh') ? '清空整个垃圾箱，不受当前筛选影响。' : 'Empty the ENTIRE Trash, regardless of current filters.') +
+        '\n' + selectionDetails(listed.threads, ids, this.locale.startsWith('zh'))
+      if (await vscode.window.showWarningMessage(copy.emptyTrashConfirm, { modal: true, detail }, copy.emptyTrash) !== copy.emptyTrash) return
+      requireWorkspaceTrust(vscode.workspace.isTrusted)
+      await this.finishBatch(await this.api.emptyTrash())
     } catch (error) { await this.showError(error) }
   }
 
@@ -620,7 +740,9 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
         id: `threadbox:thread:${thread.id}`,
         kind: 'thread', description: basename(thread.cwd),
         icon: thread.status === 'active' ? 'sync~spin' : thread.pinned ? 'pinned' : 'comment-discussion',
-        command: this.threadCommand(thread), tooltip: `${thread.title}\n${thread.cwd}`,
+        command: this.threadCommand(thread), tooltip: taskTooltip(thread, this.locale),
+        checked: this.matches.has(thread.id) ? this.effectiveChecked.has(thread.id) : undefined,
+        expanded: this.searchQuery.trim().length > 0,
         children: children.length > 0 ? children : undefined,
         contextValue: inTrash
           ? `threadbox.thread.trash.${archive}.${pin}`
@@ -628,105 +750,88 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
         thread
       })
     }
-    return buildVisibleThreadHierarchy(threads).map(visit)
+    return buildVisibleThreadHierarchy(threads, sidebarOrder(this.options.sort)).map(visit)
   }
 
-  private projectChildren(
-    threads: ThreadRecord[],
-    copy: SidebarLabels,
-    ownerId: string,
-    allThreads = threads,
-    inTrash = false
-  ): SidebarItem[] {
-    if (inTrash) return this.threadItems(threads, true)
+  private projectChildren(threads: ThreadRecord[], copy: SidebarLabels, ownerId: string, inTrash = false): SidebarItem[] {
+    const byId = new Map(threads.map((thread) => [thread.id, thread]))
+    const mixedFamily = threads.some((thread) => thread.parentThreadId && byId.has(thread.parentThreadId) &&
+      byId.get(thread.parentThreadId)!.archived !== thread.archived)
+    if (inTrash || mixedFamily || this.options.archive !== 'all' || this.searchQuery.trim()) return this.threadItems(threads, inTrash)
     const active = threads.filter((thread) => !thread.archived)
     const archived = threads.filter((thread) => thread.archived)
     const children = this.threadItems(active)
-    if (archived.length > 0) children.push(new SidebarItem(copy.archived, {
-      id: `threadbox:archive:${ownerId}`,
-      kind: 'archive', description: String(archived.filter((thread) => !thread.internal).length),
-      icon: 'archive', children: this.threadItems(archived), contextValue: 'threadbox.group.archive',
-      selectionIds: filterSidebarThreads(allThreads.filter((thread) => thread.archived), '')
-        .map((thread) => thread.id)
+    if (archived.length) children.push(new SidebarItem(copy.archived, {
+      id: 'threadbox:archive:' + ownerId, kind: 'archive', icon: 'archive',
+      description: String(archived.filter((thread) => !thread.internal).length),
+      children: this.threadItems(archived), contextValue: 'threadbox.group.archive',
+      selectionIds: archived.filter((thread) => this.matches.has(thread.id)).map((thread) => thread.id)
     }))
     return children
   }
 
-  private visibleCount(threads: ThreadRecord[]): number {
-    return threads.filter((thread) => !thread.internal &&
-      (this.searchQuery.trim().length > 0 || !thread.archived)).length
-  }
-
   private buildLoadedRootItems(data: LoadedSidebarData, copy: SidebarLabels): SidebarItem[] {
-    const { result } = data
     this.snapshot = data.snapshot
-    const query = this.searchQuery.trim()
-    const normalizedQuery = query.toLocaleLowerCase()
-    const main = result.threads.filter((thread) => !thread.internal)
-    const groups = groupThreads(result.threads, this.snapshot, 'projects')
-    const customProjects = this.snapshot.projects.filter((project) => project.kind === 'threadbox')
-    const projectItems: SidebarItem[] = customProjects.flatMap((project) => {
-      const group = groups.find((item) => item.kind === 'threadboxProject' && item.projectId === project.id)
-      const allThreads = group?.threads ?? []
-      const displayName = project.systemKind === 'trash' ? copy.trash : project.name
-      const threads = filterSidebarThreads(allThreads, query, displayName)
-      const projectMatches = displayName.toLocaleLowerCase().includes(normalizedQuery)
-      if (query && threads.length === 0 && !projectMatches) return []
-      const inTrash = project.systemKind === 'trash'
-      return [new SidebarItem(displayName, { kind: 'project',
-        id: `threadbox:project:${project.id}`,
-        description: String(inTrash
-          ? threads.filter((thread) => !thread.internal).length
-          : this.visibleCount(threads)),
-        icon: inTrash ? 'trash' : 'folder-library',
-        tooltip: inTrash ? copy.trash : project.name,
-        children: this.projectChildren(threads, copy, project.id, allThreads, inTrash),
-        contextValue: inTrash
-          ? 'threadbox.project.threadbox.trash'
-          : 'threadbox.project.threadbox.mutable',
-        project })]
-    })
-    const unassignedMatches = copy.unassigned.toLocaleLowerCase().includes(normalizedQuery)
-    const unassignedGroups = groups.filter((group) =>
-      group.kind === 'localWorkspace' || group.kind === 'standalone')
-    const unassignedChildren = unassignedGroups.flatMap((group) => {
-      const threads = filterSidebarThreads(group.threads, unassignedMatches ? '' : query, group.name)
-      if (threads.length === 0) return []
-      return [new SidebarItem(group.name || copy.unassigned, {
-        id: `threadbox:directory:${group.id}`,
-        kind: 'directory', description: String(this.visibleCount(threads)), icon: 'folder',
-        tooltip: group.directories.join('\n'),
-        children: this.projectChildren(threads, copy, group.id, group.threads),
-        contextValue: 'threadbox.group.directory',
-        selectionIds: filterSidebarThreads(group.threads, '').map((thread) => thread.id)
-      })]
-    })
-    if (unassignedChildren.length > 0 || !query) {
-      projectItems.push(new SidebarItem(copy.unassigned, { kind: 'unassigned',
-        id: 'threadbox:project:unassigned',
-        description: String(unassignedChildren.reduce((count, item) =>
-          count + Number(item.description ?? 0), 0)),
-        icon: 'inbox', children: unassignedChildren, contextValue: 'threadbox.project.unassigned' }))
+    this.effectiveChecked = resolveThreadSelection(data.result.threads, this.checked).effective
+    const workspaces = this.preferences?.directories() ?? []
+    if (!workspaces.length && this.options.scope === 'workspace') this.options.scope = 'all'
+    this.matches.clear()
+    this.trashMatches.clear()
+    const filtered = (threads: ThreadRecord[], name: string, trash = false): ThreadRecord[] => {
+      const result = sidebarMatches(threads, this.searchQuery, name, this.options, workspaces, trash)
+      for (const id of result.matches) { this.matches.add(id); if (trash) this.trashMatches.add(id) }
+      return result.threads
     }
-    const activeCount = main.filter((thread) => !thread.archived).length
-    this.summaryChanged.fire({ taskCount: activeCount, tooltip: `${activeCount} tasks` })
-    const children = projectItems.length > 0 ? projectItems : [new SidebarItem(copy.noResults, {
-      id: 'threadbox:no-results', kind: 'status', icon: 'search-stop', tooltip: copy.noResults
+    const groups = groupThreads(data.result.threads, this.snapshot, 'projects')
+    const count = (threads: ThreadRecord[]): number => threads.filter((thread) => this.matches.has(thread.id) && !thread.internal).length
+    const projectItems: SidebarItem[] = []
+    for (const project of this.snapshot.projects.filter((project) => project.kind === 'threadbox')) {
+      const trash = project.systemKind === 'trash'
+      const name = trash ? copy.trash : project.name
+      const group = groups.find((item) => item.kind === 'threadboxProject' && item.projectId === project.id)
+      const threads = filtered(group?.threads ?? [], name, trash)
+      const filtering = this.searchQuery.trim() || this.options.scope !== 'all' || this.options.archive !== 'all'
+      if (!trash && !threads.length && filtering) continue
+      projectItems.push(new SidebarItem(name, {
+        kind: 'project', id: 'threadbox:project:' + project.id, icon: trash ? 'trash' : 'folder-library',
+        description: String(count(threads)), tooltip: name, project,
+        expanded: Boolean(this.searchQuery.trim()) || this.options.archive === 'archived',
+        children: this.projectChildren(threads, copy, project.id, trash),
+        selectionIds: threads.filter((thread) => this.matches.has(thread.id)).map((thread) => thread.id),
+        contextValue: trash ? 'threadbox.project.threadbox.trash' : 'threadbox.project.threadbox.mutable'
+      }))
+    }
+    const directories: SidebarItem[] = []
+    for (const group of groups.filter((item) => item.kind === 'localWorkspace' || item.kind === 'standalone')) {
+      const threads = filtered(group.threads, group.name)
+      if (!threads.length) continue
+      directories.push(new SidebarItem(group.name || copy.unassigned, {
+        id: 'threadbox:directory:' + group.id, kind: 'directory', icon: 'folder',
+        description: String(count(threads)), tooltip: group.directories.join('\n'),
+        expanded: Boolean(this.searchQuery.trim()) || this.options.archive === 'archived',
+        children: this.projectChildren(threads, copy, group.id), contextValue: 'threadbox.group.directory',
+        selectionIds: threads.filter((thread) => this.matches.has(thread.id)).map((thread) => thread.id)
+      }))
+    }
+    if (directories.length) projectItems.push(new SidebarItem(copy.unassigned, {
+      kind: 'unassigned', id: 'threadbox:project:unassigned', icon: 'inbox', children: directories,
+      expanded: Boolean(this.searchQuery.trim()) || this.options.archive === 'archived', contextValue: 'threadbox.project.unassigned'
+    }))
+    this.checked = new Set([...this.checked].filter((id) => this.matches.has(id)))
+    const taskCount = data.result.threads.filter((thread) => !thread.internal && this.matches.has(thread.id) && !this.trashMatches.has(thread.id)).length
+    this.summaryChanged.fire({ taskCount, tooltip: taskCount + ' matching tasks (Trash excluded)' })
+    this.searchChanged.fire(this.description())
+    const issues = data.result.inventory.state === 'partial' ? [new SidebarItem(copy.partialInventory, {
+      id: 'threadbox:partial-inventory', kind: 'status', icon: 'warning', tooltip: data.result.inventory.message ?? copy.partialInventory
+    })] : []
+    if (!taskCount) issues.push(new SidebarItem(copy.noResults, {
+      id: 'threadbox:no-results', kind: 'status', icon: 'search-stop',
+      command: { command: 'threadbox.resetFilters', title: copy.noResults }
+    }))
+    return [...this.environmentItems(data.result.environment, copy), ...issues, new SidebarItem(copy.projects, {
+      id: 'threadbox:projects', kind: 'section', icon: 'project', expanded: true,
+      children: projectItems, contextValue: 'threadbox.projects'
     })]
-    const inventoryItems = result.inventory.state === 'partial'
-      ? [new SidebarItem(copy.partialInventory, {
-          id: 'threadbox:partial-inventory',
-          kind: 'status',
-          icon: 'warning',
-          tooltip: result.inventory.message ?? copy.partialInventory
-        })]
-      : []
-    return [...this.environmentItems(result.environment, copy), ...inventoryItems,
-      new SidebarItem(copy.projects, {
-      id: 'threadbox:projects', kind: 'section', description: String(this.snapshot.projects.length),
-      icon: 'project', children,
-      contextValue: 'threadbox.projects'
-      })]
   }
 
   private async loadRootItems(): Promise<SidebarItem[]> {

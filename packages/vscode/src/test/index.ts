@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as vscode from 'vscode'
 import type { ThreadboxExtensionApi } from '../extension'
+import { ThreadboxSidebarProvider, type SidebarItem } from '../sidebar'
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message)
@@ -53,6 +54,24 @@ export async function run(): Promise<void> {
       'VS Code did not update and re-probe the fake Codex CLI.')
     const listed = await api.listThreads()
     assert(listed.threads.length === 4, 'VS Code did not load active and archived fake tasks.')
+    const sidebar = new ThreadboxSidebarProvider(api, 'threadbox.openInCodex', 'threadbox.updateCodexCli', 'en', undefined, {
+      load: () => undefined, save: async () => undefined,
+      directories: () => (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath)
+    })
+    try {
+      await sidebar.setView({ scope: 'workspace', archive: 'active', sort: 'title-asc' })
+      const flatten = (items: SidebarItem[]): SidebarItem[] => items.flatMap((item) => [item, ...flatten(item.children ?? [])])
+      const items = flatten(await sidebar.getChildren())
+      const root = items.find((item) => item.thread?.id === '019f0000-0000-7000-8000-000000000001')
+      assert(root?.checkboxState === vscode.TreeItemCheckboxState.Unchecked, 'Native task checkbox is missing.')
+      assert(String(root.tooltip).includes('Created:') && String(root.tooltip).includes('Source:'), 'Task metadata tooltip is incomplete.')
+      assert(!items.some((item) => item.thread?.id === '019f0000-0000-7000-8000-000000000003'), 'Workspace filter leaked another directory.')
+      sidebar.checkItems([[root, vscode.TreeItemCheckboxState.Checked]])
+      assert(flatten(await sidebar.getChildren()).find((item) => item.thread?.id === root.thread?.id)?.checkboxState === vscode.TreeItemCheckboxState.Checked,
+        'Native checkbox state did not update.')
+      sidebar.clearSelection()
+      await sidebar.resetFilters()
+    } finally { sidebar.dispose() }
     assert(!listed.environment.capabilities.pinning && listed.threads.every((thread) => !thread.pinned),
       'Unsupported pinning APIs must not make all tasks appear pinned.')
     assert(api.importCurrentWorkspaceProject, 'VS Code did not expose workspace project import.')
@@ -132,7 +151,10 @@ export async function run(): Promise<void> {
     assert(commands.includes('threadbox.openInCodexOnDoubleClick'),
       'Threadbox double-click task command was not registered.')
     await vscode.commands.executeCommand('threadbox.refreshSidebar')
-    await vscode.commands.executeCommand('threadbox.openManager')
+    assert(!commands.includes('threadbox.openManager'), 'The removed Manager command is still registered.')
+    for (const command of ['filterSidebar', 'sortSidebar', 'selectFiltered', 'clearSelection', 'openSettings', 'trashSelected']) {
+      assert(commands.includes('threadbox.' + command), 'Missing sidebar command: ' + command)
+    }
     const fakeLog = process.env.THREADBOX_FAKE_LOG
     assert(fakeLog, 'THREADBOX_FAKE_LOG was not provided.')
     const appServerMessages = (await readFile(fakeLog, 'utf8')).trim().split(/\r?\n/)

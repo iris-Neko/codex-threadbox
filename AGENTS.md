@@ -10,7 +10,7 @@ release workflow unless the request explicitly requires it.
 | --- | --- | --- | --- |
 | Desktop | `0.3.0` | `src/`, Electron configuration, desktop packaging | `v<version>` |
 | CLI | `0.3.1` | `packages/cli/` | `cli-v<version>` |
-| VS Code | `0.9.7` | `packages/vscode/` | `vscode-v<version>` |
+| VS Code | `0.10.0` | `packages/vscode/` | `vscode-v<version>` |
 
 The desktop version comes from the root `package.json`. The CLI and VS Code
 versions come only from their own package manifests. Do not synchronize these
@@ -57,8 +57,8 @@ to shared packages.
 
 - Keep `extensionKind: ["workspace"]` so remote hosts manage their own tasks.
 - Do not start Codex or mutate tasks in an untrusted workspace.
-- Keep Webviews under a strict CSP with local assets, no Node access, a fixed RPC
-  allowlist, request IDs, timeouts, and runtime argument validation.
+- VS Code is native-sidebar-only. Do not reintroduce a Manager Webview or RPC
+  surface. Keep native commands workspace-trust guarded and validate runtime arguments.
 - Threadbox projects contain only names and root task IDs in
   `globalStorageUri`. They are manual, host-local assignments and must not alter
   Codex project data. Codex interface projects are not currently exposed by the
