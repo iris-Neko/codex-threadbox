@@ -8,6 +8,8 @@ import { ThreadService } from '../../../core/src/thread-service'
 import { createProjectThread } from '../codex-projects'
 import { ProjectStore } from '../project-store'
 import { TrashController } from '../trash-controller'
+import { knownCodexExecutables, LinuxWriterRecovery } from '../linux-writer-recovery'
+import { recoverWriterAndTrash } from '../writer-recovery'
 
 async function run(): Promise<void> {
   const executable = process.argv[2]
@@ -17,7 +19,7 @@ async function run(): Promise<void> {
     ...process.env, CODEX_HOME: directory
   })
   const descriptor = {
-    name: 'threadbox_isolated_trash_smoke', title: 'Threadbox isolated Trash smoke', version: '0.9.4',
+    name: 'threadbox_isolated_trash_smoke', title: 'Threadbox isolated Trash smoke', version: '0.9.5',
     initializeCapabilities: { experimentalApi: true, requestAttestation: false }
   }
   const client = new AppServerClient(runtime, descriptor)
@@ -32,6 +34,7 @@ async function run(): Promise<void> {
     const project = snapshot.projects.find((item) => item.name === 'Trash smoke')!
     const controller = new TrashController(service, store)
     let created
+    let recovered: Awaited<ReturnType<typeof recoverWriterAndTrash>> | undefined
     try {
       created = await createProjectThread(creator, project, 'Disposable Trash smoke', directory,
         (id, projectId) => store.assignCreatedThread(id, projectId))
@@ -39,8 +42,24 @@ async function run(): Promise<void> {
       assert.deepEqual(locked.succeeded, [], 'A foreign writer must not be bypassed.')
       assert.match(locked.failed[0]?.message ?? '', /already has an active writer/)
       assert.deepEqual(await store.listTrashRoots(), [], 'A failed archive must not create a Trash assignment.')
+      if (process.platform === 'linux' && process.argv[3]) {
+        const allowed = await knownCodexExecutables(executable)
+        const guard = (): void => { assert(directory.includes('threadbox-real-trash-')) }
+        recovered = await recoverWriterAndTrash([created.threadId], {
+          backend: new LinuxWriterRecovery(process.argv[3], directory, allowed, guard), guard,
+          trash: (ids) => controller.trash(ids),
+          inventory: async () => (await service.listThreads()).threads,
+          preview: (ids) => service.previewDeleteThreads(ids),
+          confirm: async (owner, _threads, force) => {
+            assert(owner.locks.some((lock) => lock.id === created!.threadId))
+            assert.equal(force, false, 'The disposable Codex backend should stop normally.')
+            return true
+          }
+        })
+        assert(recovered, 'Recovery unexpectedly cancelled.')
+      }
     } finally { creator.stop() }
-    const trashed = await controller.trash([created.threadId])
+    const trashed = recovered ?? await controller.trash([created.threadId])
     assert.deepEqual(trashed.succeeded, [created.threadId], JSON.stringify(trashed))
     assert.deepEqual(await store.listTrashRoots(), [created.threadId])
     const restored = await controller.restore([created.threadId])
@@ -56,6 +75,7 @@ async function run(): Promise<void> {
       cli: initial.environment.cliVersion, pinning: initial.environment.capabilities.pinning,
       created: true, trashed: true, restored: true, dragToTrash: true, emptied: true,
       foreignWriterProtected: true, retryAfterRelease: true,
+      pidfdRecoveryTested: Boolean(recovered),
       isolatedHome: directory
     }))
   } finally {

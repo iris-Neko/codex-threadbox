@@ -43,6 +43,7 @@ await Promise.all([
     legalComments: 'none'
   }),
   copyFile(resolve(packageRoot, '../../resources/icon.png'), resolve(dist, 'icon.png')),
+  copyFile(resolve(packageRoot, 'scripts/writer-recovery.py'), resolve(dist, 'writer-recovery.py')),
   copyFile(resolve(packageRoot, '../../resources/activitybar.svg'), resolve(dist, 'activitybar.svg'))
 ])
 

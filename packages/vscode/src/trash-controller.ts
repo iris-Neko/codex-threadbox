@@ -165,7 +165,7 @@ export class TrashController {
     const trashId = await this.projects.getTrashProjectId()
     if (projectId === trashId) {
       const result = await this.trash(ids)
-      if (result.failed.length > 0 || result.skipped.length > 0) throw new ProjectAssignmentError(result)
+      if (result.failed.length > 0 || result.skipped.length > 0) throw new ProjectAssignmentError(result, 'trash')
       return this.projects.list()
     }
 
@@ -176,7 +176,7 @@ export class TrashController {
     const ordinary = roots.filter((id) => !trashedSet.has(id))
     if (ordinary.length > 0) await this.projects.assign(ordinary, projectId)
     if (restored.failed.length > 0 || restored.skipped.length > 0) {
-      throw new ProjectAssignmentError({ ...restored, succeeded: [...restored.succeeded, ...ordinary] })
+      throw new ProjectAssignmentError({ ...restored, succeeded: [...restored.succeeded, ...ordinary] }, 'restore')
     }
     return this.projects.list()
   }

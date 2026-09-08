@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { basename, join, resolve } from 'node:path'
+import { homedir } from 'node:os'
 import * as vscode from 'vscode'
 import {
   AppServerClient,
@@ -10,6 +11,7 @@ import {
 import type {
   AppLocale,
   AppSettings,
+  BatchOperationResult,
   DesktopRecentsRepairResult,
   EnvironmentStatus,
   PlatformCapabilities,
@@ -38,6 +40,8 @@ import {
 import { migrateLegacyProjectStorage } from './storage-migration'
 import { TrashController } from './trash-controller'
 import { requireWorkspaceTrust } from './workspace-trust'
+import { knownCodexExecutables, LinuxWriterRecovery } from './linux-writer-recovery'
+import { recoverWriterAndTrash } from './writer-recovery'
 
 const CONFIGURATION = 'threadbox'
 const COMMAND = 'threadbox.openManager'
@@ -157,6 +161,11 @@ class RuntimeHost implements vscode.Disposable {
 
   createOneShotClient(): AppServerClient {
     return this.createClient()
+  }
+
+  getCodexHome(): string {
+    this.getRuntime()
+    return resolve(this.environment?.CODEX_HOME || join(homedir(), '.codex'))
   }
 
   private createClient(): AppServerClient {
@@ -611,16 +620,68 @@ export interface ThreadboxExtensionApi {
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<ThreadboxExtensionApi> {
-  const version = String(context.extension.packageJSON.version ?? '0.9.4')
+  const version = String(context.extension.packageJSON.version ?? '0.9.5')
   const runtime = new RuntimeHost(version)
   await migrateLegacyProjectStorage(context.globalStorageUri.fsPath)
   const projects = new ProjectStore(join(context.globalStorageUri.fsPath, 'projects-v1.json'))
   const api = createApi(runtime, projects)
+  let recoveryDisposed = false
+  let recoveryPending = false
+  context.subscriptions.push({ dispose: () => { recoveryDisposed = true } })
+  const recover = async (ids: string[]): Promise<BatchOperationResult | null> => {
+    if (recoveryPending) throw new Error('Another writer recovery is already in progress.')
+    const initialConfiguration = [configuredString('codexHome'), configuredString('codexBinary')]
+    const guard = (): void => {
+      requireWorkspaceTrust(vscode.workspace.isTrusted)
+      if (recoveryDisposed || initialConfiguration[0] !== configuredString('codexHome') ||
+        initialConfiguration[1] !== configuredString('codexBinary')) {
+        throw new Error('The extension or Codex configuration changed. Start recovery again.')
+      }
+    }
+    guard()
+    recoveryPending = true
+    try {
+      const probe = await runtime.getRuntime().probe()
+      if (probe.status.state !== 'ready') throw new Error(probe.status.message ?? 'Codex CLI is unavailable.')
+      const allowed = await knownCodexExecutables(probe.command,
+        vscode.extensions.getExtension(CODEX_EXTENSION_ID)?.extensionUri.fsPath)
+      const backend = new LinuxWriterRecovery(join(context.extensionUri.fsPath, 'dist', 'writer-recovery.py'),
+        runtime.getCodexHome(), allowed, guard)
+      return await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: configuredLocale() === 'zh-CN' ? '正在检查 Codex 占用并重试…' : 'Checking Codex ownership and retrying…',
+        cancellable: false
+      }, () => recoverWriterAndTrash(ids, {
+        backend, guard,
+        trash: (targets) => new TrashController(runtime.getService(), projects).trash(targets),
+        inventory: async () => (await (await serviceWithProjectThreads(runtime, projects)).listThreads()).threads,
+        preview: async (targets) => (await serviceWithProjectThreads(runtime, projects)).previewDeleteThreads(targets),
+        confirm: async (owner, threads, force) => {
+          guard()
+          const chinese = configuredLocale() === 'zh-CN'
+          const titles = new Map(threads.map((thread) => [thread.id, thread.title]))
+          const affected = owner.locks.map((lock) => (titles.get(lock.id) ?? 'Unknown task') + ' [' + lock.id + ']')
+          const action = chinese ? force ? '强制结束后台' : '结束后台并重试' : force ? 'Force Stop Backend' : 'Stop Backend and Retry'
+          const message = chinese
+            ? force ? 'Codex 后台未退出。是否强制结束？未完成的工作可能丢失。' : '结束占用的 Codex 后台并重试移入垃圾箱？'
+            : force ? 'Codex did not release the task. Force stop it? Unfinished work may be lost.' : 'Stop the occupying Codex backend and retry Move to Trash?'
+          const detail = (chinese
+            ? '这会断开该后台管理的全部会话，正在运行的任务也可能被中断，之后可能需要重载 Codex。以下仅是能识别到的占用，不保证包含全部后台活动。不会直接删除任何会话或锁文件。'
+            : 'This disconnects ALL sessions served by this backend and may interrupt running tasks. Codex may need reloading afterwards. Known writer locks below may not cover all backend activity. No session or lock files will be directly deleted.') +
+            '\n\nPID: ' + owner.pid + '\n' + owner.executable + '\n\n' + affected.join('\n')
+          const selected = await vscode.window.showWarningMessage(message, { modal: true, detail }, action)
+          guard()
+          return selected === action
+        }
+      }))
+    } finally { recoveryPending = false }
+  }
   const sidebar = new ThreadboxSidebarProvider(
     api,
     SIDEBAR_COMMANDS.openOnDoubleClick,
     SIDEBAR_COMMANDS.updateCodexCli,
-    vscode.env.language
+    vscode.env.language,
+    process.platform === 'linux' ? recover : undefined
   )
   const doubleClickGate = new DoubleClickGate()
   const codexExtension = vscode.extensions.getExtension(CODEX_EXTENSION_ID)

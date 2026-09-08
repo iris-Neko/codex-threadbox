@@ -5,6 +5,12 @@ import { parseRpcRequest } from '../../packages/vscode/src/rpc'
 import { requireWorkspaceTrust } from '../../packages/vscode/src/workspace-trust'
 
 describe('VS Code Webview RPC validation', () => {
+  it('does not expose process recovery, PIDs, or signals to Webviews', () => {
+    for (const method of ['recoverWriterAndTrash', 'recoverWriter', 'terminate', 'force']) {
+      expect(parseRpcRequest({ kind: 'threadbox.request', id: 'blocked', method,
+        args: [{ pid: 12345, signal: 'SIGKILL' }] })).toBeNull()
+    }
+  })
   it('accepts allowlisted methods with valid parameters', () => {
     expect(parseRpcRequest({
       kind: 'threadbox.request',

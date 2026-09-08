@@ -34,7 +34,7 @@ export function batchFeedback(result: BatchOperationResult, locale: string): str
 }
 
 export class ProjectAssignmentError extends Error {
-  constructor(readonly result: BatchOperationResult) {
+  constructor(readonly result: BatchOperationResult, readonly operation?: 'trash' | 'restore') {
     super(batchFeedback(result, 'en'))
   }
 }

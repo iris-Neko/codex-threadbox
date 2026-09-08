@@ -41,9 +41,11 @@ const environment = {
   state: 'ready', cliVersion: '0.153.4', cliPath: '/codex', minimumVersion: '0.153.3',
   capabilities: { pinning: false }, externalCodexProcesses: 0, message: null
 }
-function setup() {
+function setup(recover?: (ids: string[]) => Promise<BatchOperationResult | null>) {
   const api = {
     trashThreads: vi.fn(async () => result),
+    restoreThreadsFromTrash: vi.fn(async () => result),
+    emptyTrash: vi.fn(async () => result),
     listThreads: vi.fn(async () => ({
       threads: [thread], environment, inventory: { state: 'complete', message: null }, refreshedAt: 1
     })),
@@ -51,7 +53,7 @@ function setup() {
     getEnvironmentStatus: vi.fn(async () => environment),
     assignThreads: vi.fn()
   }
-  const sidebar = new ThreadboxSidebarProvider(api as unknown as ThreadboxApi, 'open', 'update', 'en')
+  const sidebar = new ThreadboxSidebarProvider(api as unknown as ThreadboxApi, 'open', 'update', 'en', recover)
   return { api, sidebar, item: new SidebarItem(thread.title, { kind: 'thread', thread }) }
 }
 
@@ -63,6 +65,44 @@ beforeEach(() => {
 })
 
 describe('Sidebar Trash actions', () => {
+  it('never offers process recovery for Restore or permanent Empty Trash', async () => {
+    const recover = vi.fn(async () => result)
+    const { api, sidebar, item } = setup(recover)
+    const failure = { ...result, succeeded: [], failed: [
+      { id: thread.id, message: 'thread ordinary already has an active writer' }
+    ] }
+    api.restoreThreadsFromTrash.mockResolvedValue(failure)
+    await sidebar.restoreThreads([item])
+    expect(ui.warning.mock.calls.at(-1)).not.toContain('Release Writer and Retry')
+    api.emptyTrash.mockResolvedValue(failure)
+    ui.warning.mockResolvedValueOnce('Empty Trash').mockResolvedValueOnce(undefined)
+    await sidebar.emptyTrash(new SidebarItem('Trash', { kind: 'project', project: trash }))
+    expect(ui.warning.mock.calls.at(-1)).not.toContain('Release Writer and Retry')
+    expect(recover).not.toHaveBeenCalled()
+    sidebar.dispose()
+  })
+  it('offers recovery only through the trusted host callback for a failed Trash operation', async () => {
+    const recover = vi.fn(async () => result)
+    const { api, sidebar, item } = setup(recover)
+    api.trashThreads.mockResolvedValueOnce({ ...result, succeeded: [], failed: [
+      { id: thread.id, message: 'thread ordinary already has an active writer' }
+    ] })
+    ui.warning.mockResolvedValueOnce('Move to Trash').mockResolvedValueOnce('Release Writer and Retry')
+    await sidebar.deleteThreads([item])
+    await vi.waitFor(() => expect(recover).toHaveBeenCalledExactlyOnceWith(['ordinary']))
+    expect(ui.warning.mock.calls[1]).toContain('Release Writer and Retry')
+    sidebar.dispose()
+  })
+
+  it('does not expose recovery when the host has no supported recovery backend', async () => {
+    const { api, sidebar, item } = setup()
+    api.trashThreads.mockResolvedValueOnce({ ...result, succeeded: [], failed: [
+      { id: thread.id, message: 'thread ordinary already has an active writer' }
+    ] })
+    await sidebar.deleteThreads([item])
+    expect(ui.warning.mock.calls.at(-1)).not.toContain('Release Writer and Retry')
+    sidebar.dispose()
+  })
   it('opens the exact locked task through the existing Codex integration', async () => {
     const { api, sidebar, item } = setup()
     api.trashThreads.mockResolvedValueOnce({ ...result, succeeded: [], failed: [

@@ -182,7 +182,8 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
     private readonly api: ThreadboxApi,
     private readonly openThreadCommand: string,
     private readonly updateCodexCliCommand: string,
-    private readonly locale: string
+    private readonly locale: string,
+    private readonly recoverWriter?: (ids: string[]) => Promise<BatchOperationResult | null>
   ) {}
 
   refresh(): void { this.loaded = null; this.redraw() }
@@ -404,13 +405,18 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
 
   private async finishBatch(
     result: BatchOperationResult,
-    retry?: (ids: string[]) => Promise<BatchOperationResult>
+    retry?: (ids: string[]) => Promise<BatchOperationResult>,
+    recoverToTrash = false
   ): Promise<void> {
     await this.refreshNow()
-    this.reportBatch(result, retry)
+    this.reportBatch(result, retry, recoverToTrash)
   }
 
-  private reportBatch(result: BatchOperationResult, retry?: (ids: string[]) => Promise<BatchOperationResult>): void {
+  private reportBatch(
+    result: BatchOperationResult,
+    retry?: (ids: string[]) => Promise<BatchOperationResult>,
+    recoverToTrash = false
+  ): void {
     if (this.disposed) return
     const titles = new Map((this.loaded?.result.threads ?? []).map((thread) => [thread.id, thread.title]))
     const notice = batchNotice(result, this.locale, titles)
@@ -419,15 +425,18 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
       const details = chinese ? '查看详情' : 'View Details'
       const open = chinese ? '在 Codex 中打开' : 'Open in Codex'
       const retryLabel = chinese ? '重试' : 'Retry'
+      const recoverLabel = chinese ? '释放占用并重试' : 'Release Writer and Retry'
+      const canRecover = recoverToTrash && this.recoverWriter && notice.lockedIds.length === 1
       const actions = [details]
       if (notice.lockedIds.length === 1) actions.unshift(open)
-      if (retry) actions.push(retryLabel)
+      if (retry && !canRecover) actions.push(retryLabel)
+      if (canRecover) actions.unshift(recoverLabel)
       this.operationLog ??= vscode.window.createOutputChannel('Threadbox')
       this.operationLog.appendLine(new Date().toISOString() + '\n' + notice.details)
       void Promise.resolve(vscode.window.showWarningMessage(notice.message, ...actions)).then(async (choice) => {
         if (this.disposed) return
         if (choice === details) { this.operationLog?.show(true); return }
-        if (choice !== open && choice !== retryLabel) return
+        if (choice !== open && choice !== retryLabel && choice !== recoverLabel) return
         requireWorkspaceTrust(vscode.workspace.isTrusted)
         if (choice === open && notice.lockedIds.length === 1) {
           await vscode.commands.executeCommand('threadbox.openInCodex', notice.lockedIds[0])
@@ -435,7 +444,11 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
           const succeeded = new Set(result.succeeded)
           const ids = [...new Set([...result.failed, ...result.skipped].map((issue) => issue.id))]
             .filter((id) => !succeeded.has(id))
-          if (ids.length > 0) await this.finishBatch(await retry(ids), retry)
+          if (ids.length > 0) await this.finishBatch(await retry(ids), retry, recoverToTrash)
+        } else if (choice === recoverLabel && canRecover) {
+          const recovered = await this.recoverWriter!(notice.lockedIds)
+          if (recovered) await this.finishBatch(recovered, retry, recoverToTrash)
+          else await this.refreshNow()
         }
       }).catch((error: unknown) => this.showError(error))
     } else {
@@ -473,7 +486,7 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
       const move = (targets: string[]): Promise<BatchOperationResult> => this.api.trashThreads
         ? this.api.trashThreads(targets)
         : this.api.deleteThreads(targets, { trashWorkingDirectories: [] })
-      await this.finishBatch(await move(ids), move)
+      await this.finishBatch(await move(ids), move, true)
     } catch (error) { await this.showError(error) }
   }
 
@@ -727,7 +740,7 @@ vscode.TreeDataProvider<SidebarItem>, vscode.TreeDragAndDropController<SidebarIt
 
   private async showError(error: unknown): Promise<void> {
     if (error instanceof ProjectAssignmentError) {
-      this.reportBatch(error.result)
+      this.reportBatch(error.result, undefined, error.operation === 'trash')
       return
     }
     await vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error))

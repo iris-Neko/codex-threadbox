@@ -32,10 +32,11 @@ jobs:
       - run: xvfb-run -a npm run test:vscode
       - name: Test Trash lifecycle with the two supported stable CLIs
         run: |
+          python3 -I -B tests/fixtures/test_writer_recovery.py
           npx esbuild packages/vscode/src/test/real-trash.ts --bundle --platform=node --format=cjs --outfile=packages/vscode/test-dist/real-trash.cjs
           npm install --prefix "$RUNNER_TEMP/codex-previous" --no-save --package-lock=false --ignore-scripts @openai/codex@0.153.3
-          node packages/vscode/test-dist/real-trash.cjs "$RUNNER_TEMP/codex-previous/node_modules/.bin/codex"
-          node packages/vscode/test-dist/real-trash.cjs "$PWD/node_modules/.bin/codex"
+          node packages/vscode/test-dist/real-trash.cjs "$RUNNER_TEMP/codex-previous/node_modules/.bin/codex" "$PWD/packages/vscode/dist/writer-recovery.py"
+          node packages/vscode/test-dist/real-trash.cjs "$PWD/node_modules/.bin/codex" "$PWD/packages/vscode/dist/writer-recovery.py"
       - name: Generate checksum
         run: |
           cd dist
