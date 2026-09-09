@@ -2,9 +2,16 @@ name: Release Desktop
 
 on:
   workflow_dispatch:
+    inputs:
+      artifact_run_id:
+        description: Reuse fully tested desktop artifacts from this run (optional)
+        required: false
+        type: string
+      release_tag:
+        description: Existing desktop tag for verified-artifact publication
+        required: false
+        type: string
   push:
-    branches:
-      - codex/threadbox-desktop
     tags:
       - 'v[0-9]*'
 
@@ -13,6 +20,7 @@ env:
 
 jobs:
   desktop:
+    if: ${{ !inputs.artifact_run_id }}
     name: Desktop ${{ matrix.target }}
     permissions:
       contents: read
@@ -85,16 +93,28 @@ jobs:
   draft-release:
     name: Create draft GitHub Release
     needs: desktop
-    if: startsWith(github.ref, 'refs/tags/')
+    if: ${{ always() && ((startsWith(github.ref, 'refs/tags/') && needs.desktop.result == 'success') || (github.event_name == 'workflow_dispatch' && inputs.artifact_run_id != '')) }}
     permissions:
       contents: write
+      actions: read
     runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+      SOURCE_RUN_ID: ${{ inputs.artifact_run_id || github.run_id }}
     steps:
       - uses: actions/checkout@v4
+      - name: Verify artifact source matches the tag and passed all platform jobs
+        run: node scripts/verify-desktop-source.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
       - uses: actions/download-artifact@v4
         with:
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ github.token }}
           path: release-artifacts
           merge-multiple: true
+      - name: Normalize Linux architecture names
+        run: node scripts/normalize-desktop-artifacts.mjs release-artifacts
       - name: Generate checksums
         working-directory: release-artifacts
         run: find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
@@ -103,18 +123,20 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           draft: true
-          name: Threadbox Desktop ${{ github.ref_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: Threadbox Desktop ${{ env.RELEASE_TAG }}
           body_path: docs/releases/desktop-1.0.0.md
           files: release-artifacts/*
 
   finalize-release:
     name: Publish GitHub Release
     needs: draft-release
-    if: startsWith(github.ref, 'refs/tags/')
+    if: ${{ always() && needs.draft-release.result == 'success' }}
     permissions:
       contents: write
     runs-on: ubuntu-latest
     steps:
-      - run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
+      - run: gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
