@@ -70,7 +70,7 @@ npm install -g @openai/codex@latest
 
 - **Windows：**运行 NSIS 安装程序或解压 ZIP。未签名版本可能触发 SmartScreen；核对发布者和校验值后，可选择“更多信息 > 仍要运行”。
 - **macOS：**打开 DMG 或 ZIP。未签名版本可能需要右键应用选择“打开”，或在“系统设置 > 隐私与安全性”中批准。
-- **Linux：**安装 DEB，或者给 AppImage 增加执行权限后运行。
+- **Linux：**安装 DEB 或 RPM，或者给 AppImage 增加执行权限后运行。Fedora 可执行 `sudo dnf install ./Threadbox-for-Codex-1.0.0-linux-x64.rpm`。
 
 桌面端 1.0.0 同时提供 Linux x64 Flatpak 安装包：
 

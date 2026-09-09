@@ -70,7 +70,7 @@ Download the package for your platform from [GitHub Releases](https://github.com
 
 - **Windows:** run the NSIS installer or unpack the ZIP build. Unsigned builds may trigger SmartScreen; inspect the publisher and release checksum before choosing **More info > Run anyway**.
 - **macOS:** open the DMG or ZIP build. Unsigned builds may require right-clicking the app and choosing **Open**, or approving it in **System Settings > Privacy & Security**.
-- **Linux:** install the DEB package or mark the AppImage executable and launch it.
+- **Linux:** install the DEB or RPM package, or mark the AppImage executable and launch it. For Fedora, use `sudo dnf install ./Threadbox-for-Codex-1.0.0-linux-x64.rpm`.
 
 Desktop 1.0.0 also includes a Linux x64 Flatpak bundle:
 

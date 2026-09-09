@@ -32,6 +32,7 @@ linux:
   target:
     - AppImage
     - deb
+    - rpm
     - flatpak
   artifactName: Threadbox-for-Codex-${version}-linux-${arch}.${ext}
 flatpak:

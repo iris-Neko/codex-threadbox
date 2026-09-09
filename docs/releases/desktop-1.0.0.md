@@ -14,7 +14,7 @@ The first stable desktop release, with a task-first interface and separate proje
 
 - **Windows x64:** installer `.exe` or portable `.zip`.
 - **macOS:** `.dmg` or `.zip` for Apple Silicon (`arm64`) and Intel (`x64`).
-- **Linux x64:** `.flatpak`, `.AppImage`, or `.deb`.
+- **Linux x64:** `.flatpak`, `.AppImage`, `.deb`, or `.rpm`.
 
 Codex CLI 0.149.0 or newer must be installed on the host. Flatpak calls the host CLI through `flatpak-spawn`; configure its absolute path in Settings if your login shell cannot locate it.
 

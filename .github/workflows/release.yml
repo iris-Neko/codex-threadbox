@@ -3,6 +3,10 @@ name: Release Desktop
 on:
   workflow_dispatch:
     inputs:
+      rpm_release_tag:
+        description: Build and append RPM from this existing published desktop tag
+        required: false
+        type: string
       artifact_run_id:
         description: Reuse fully tested desktop artifacts from this run (optional)
         required: false
@@ -20,7 +24,7 @@ env:
 
 jobs:
   desktop:
-    if: ${{ !inputs.artifact_run_id }}
+    if: ${{ !inputs.artifact_run_id && !inputs.rpm_release_tag }}
     name: Desktop ${{ matrix.target }}
     permissions:
       contents: read
@@ -64,7 +68,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder elfutils
+          sudo apt-get install -y flatpak flatpak-builder elfutils rpm
           flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
       - run: npm run dist -- ${{ matrix.args }} --publish never
         env:
@@ -89,11 +93,74 @@ jobs:
             dist/*.AppImage
             dist/*.deb
             dist/*.flatpak
+            dist/*.rpm
+
+  rpm-addon:
+    name: Build and publish RPM add-on
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.rpm_release_tag != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.rpm_release_tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Require an existing stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq 'select(.isDraft == false and .isPrerelease == false)' | grep -q 'isDraft'
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.rpm_release_tag }}
+          path: source
+      - run: npm ci
+      - run: npm ci
+        working-directory: source
+      - name: Verify source version and build from the immutable tag
+        working-directory: source
+        run: |
+          test "$RELEASE_TAG" = "v$(node -p "require('./package.json').version")"
+          chmod +x tests/fixtures/bin/codex
+          npm run verify
+          sudo apt-get update
+          sudo apt-get install -y rpm cpio
+          npx electron-builder --linux rpm --x64 --publish never
+      - name: Verify RPM metadata and extracted payload
+        working-directory: source
+        run: |
+          set -euo pipefail
+          RPM=$(realpath dist/*.rpm)
+          test "$(rpm -qp --queryformat '%{VERSION}' "$RPM")" = "${RELEASE_TAG#v}"
+          test "$(rpm -qp --queryformat '%{ARCH}' "$RPM")" = x86_64
+          rpm --checksig "$RPM"
+          mkdir dist/rpm-payload
+          (cd dist/rpm-payload && rpm2cpio "$RPM" | cpio -idm)
+          PAYLOAD=$(find dist/rpm-payload -type f -name threadbox-for-codex -print -quit)
+          test -n "$PAYLOAD"
+          cmp dist/linux-unpacked/resources/app.asar "$(dirname "$PAYLOAD")/resources/app.asar"
+          sudo chown root:root "$(dirname "$PAYLOAD")/chrome-sandbox"
+          sudo chmod 4755 "$(dirname "$PAYLOAD")/chrome-sandbox"
+          THREADBOX_PACKAGED_EXECUTABLE=$(realpath "$PAYLOAD") xvfb-run -a node ../scripts/smoke-packaged.mjs
+      - name: Verify installation on Fedora
+        working-directory: source
+        run: |
+          docker run --rm -v "$PWD/dist:/artifacts:ro" fedora:latest sh -lc 'dnf -y install /artifacts/*.rpm && rpm -q codex-threadbox'
+      - name: Publish RPM and update checksums without replacing existing installers
+        run: node scripts/publish-desktop-rpm.mjs source/dist
+        env:
+          GH_TOKEN: ${{ github.token }}
 
   draft-release:
     name: Create draft GitHub Release
     needs: desktop
-    if: ${{ always() && ((startsWith(github.ref, 'refs/tags/') && needs.desktop.result == 'success') || (github.event_name == 'workflow_dispatch' && inputs.artifact_run_id != '')) }}
+    if: ${{ always() && !inputs.rpm_release_tag && ((startsWith(github.ref, 'refs/tags/') && needs.desktop.result == 'success') || (github.event_name == 'workflow_dispatch' && inputs.artifact_run_id != '')) }}
     permissions:
       contents: write
       actions: read

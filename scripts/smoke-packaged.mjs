@@ -64,7 +64,7 @@ async function runPackagedSmoke(label, environment, verify) {
   }
 }
 
-const executablePath = await packagedExecutable()
+const executablePath = process.env.THREADBOX_PACKAGED_EXECUTABLE ?? await packagedExecutable()
 const fakeCli = resolve(
   'tests',
   'fixtures',

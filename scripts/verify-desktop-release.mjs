@@ -6,7 +6,7 @@ const directory = resolve(process.argv[2] ?? 'release-artifacts')
 const targets = [
   'windows-x64.exe', 'windows-x64.zip',
   'macos-x64.dmg', 'macos-x64.zip', 'macos-arm64.dmg', 'macos-arm64.zip',
-  'linux-x64.AppImage', 'linux-x64.deb', 'linux-x64.flatpak'
+  'linux-x64.AppImage', 'linux-x64.deb', 'linux-x64.flatpak', 'linux-x64.rpm'
 ]
 for (const target of targets) {
   const name = `Threadbox-for-Codex-${version}-${target}`
