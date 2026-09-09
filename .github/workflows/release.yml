@@ -1,7 +1,10 @@
 name: Release Desktop
 
 on:
+  workflow_dispatch:
   push:
+    branches:
+      - codex/threadbox-desktop
     tags:
       - 'v[0-9]*'
 
@@ -27,6 +30,7 @@ jobs:
             os: ubuntu-latest
             args: --linux --x64
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -34,15 +38,38 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - run: npm ci
+      - if: runner.os != 'Windows'
+        run: chmod +x tests/fixtures/bin/codex
       - name: Verify tag matches desktop version
+        if: startsWith(github.ref, 'refs/tags/')
         shell: bash
         run: |
           VERSION=$(node -p "require('./package.json').version")
           test "$GITHUB_REF_NAME" = "v$VERSION"
       - run: npm run verify
+      - run: npm run test:integration
+      - if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:e2e
+      - if: runner.os != 'Linux'
+        run: npm run test:e2e
+      - name: Install Flatpak build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder elfutils
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
       - run: npm run dist -- ${{ matrix.args }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:packaged
+      - if: runner.os != 'Linux'
+        run: npm run test:packaged
+      - name: Install and smoke-test Flatpak
+        if: runner.os == 'Linux'
+        run: |
+          flatpak install --user --assumeyes --bundle dist/*.flatpak
+          dbus-run-session -- xvfb-run -a node scripts/smoke-flatpak.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.target }}
@@ -53,14 +80,17 @@ jobs:
             dist/*.dmg
             dist/*.AppImage
             dist/*.deb
+            dist/*.flatpak
 
   draft-release:
     name: Create draft GitHub Release
     needs: desktop
+    if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: release-artifacts
@@ -68,15 +98,19 @@ jobs:
       - name: Generate checksums
         working-directory: release-artifacts
         run: find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
+      - name: Verify all requested platforms are present
+        run: node scripts/verify-desktop-release.mjs release-artifacts
       - uses: softprops/action-gh-release@v2
         with:
           draft: true
-          generate_release_notes: true
+          name: Threadbox Desktop ${{ github.ref_name }}
+          body_path: docs/releases/desktop-1.0.0.md
           files: release-artifacts/*
 
   finalize-release:
     name: Publish GitHub Release
     needs: draft-release
+    if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
     runs-on: ubuntu-latest

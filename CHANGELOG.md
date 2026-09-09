@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here.
 
+## Desktop 1.0.0 - 2026-09-09
+
+- Replace the desktop table with a main-task list and separate project, directory, and independent-task navigation.
+- Read official project names and safely support read-only legacy desktop project assignments.
+- Hide spawned agents while preserving cascade deletion, protected descendants, and explicit directory Trash confirmation.
+- Add Linux x64 Flatpak packaging and a host Codex CLI bridge, alongside macOS Intel/Apple Silicon and Windows x64 packages.
+- Gate desktop publication on multi-platform verification, installed-package smoke tests, and complete release artifacts.
+- Keep CLI and VS Code product versions unchanged.
+
 ## VS Code 0.4.0 - 2026-08-24
 
 - Add host-local Threadbox projects with create, rename, delete, assignment, official-project fallback, and root-task inheritance.

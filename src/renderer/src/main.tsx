@@ -1,11 +1,11 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ThreadboxApp } from '@threadbox/ui'
+import DesktopApp from './DesktopApp'
 import '../../../packages/ui/src/i18n'
 import '../../../packages/ui/src/styles-v2.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ThreadboxApp api={window.threadbox} />
+    <DesktopApp api={window.threadbox} />
   </StrictMode>
 )

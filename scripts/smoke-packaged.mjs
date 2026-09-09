@@ -51,7 +51,7 @@ async function runPackagedSmoke(label, environment, verify) {
   const application = await electron.launch({
     executablePath,
     args: ['--lang=en-US', `--user-data-dir=${userData}`],
-    env: environment
+    env: { ...environment, CODEX_HOME: label === 'fake-cli' ? userData : environment.CODEX_HOME ?? userData }
   })
 
   try {
@@ -98,7 +98,7 @@ try {
   ].join(delimiter)
 
   await runPackagedSmoke('real-path-cli', realCliEnvironment, (window) =>
-    window.getByText('Codex 0.149.0', { exact: true }).waitFor({ timeout: 20_000 })
+    window.getByText(/^Codex \d+\.\d+\.\d+$/).waitFor({ timeout: 20_000 })
   )
 } finally {
   await rm(codexHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })

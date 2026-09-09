@@ -137,6 +137,11 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
   log(message)
   if (message.method === 'initialize') {
     send({ id: message.id, result: { userAgent: 'fake-codex' } })
+  } else if (message.method === 'project/list') {
+    send({ id: message.id, result: { data: [
+      { id: 'project-design-system', name: 'Product design', createdAt: now, updatedAt: now },
+      { id: 'project-legacy', name: 'Desktop planning', createdAt: now, updatedAt: now }
+    ], nextCursor: null } })
   } else if (message.method === 'thread/list') {
     if (process.env.THREADBOX_FAKE_HANG === '1') return
     if (!message.params.archived && !message.params.isPinned) activeListRequests += 1

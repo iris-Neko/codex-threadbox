@@ -14,12 +14,12 @@ Threadbox brings Codex task history from every working directory into one search
 
 - List active and archived tasks across all working directories.
 - Search titles, previews, paths, sources, and task IDs.
-- Group desktop chats by Project, VS Code and CLI chats by working directory, and projectless desktop chats as independent tasks.
+- Browse real Codex projects separately from working directories; expand a project to its main tasks.
 - Organize VS Code and remote-host tasks inside the Codex sidebar, including drag-and-drop and multi-select actions.
 - Switch between grouped and flat views, and filter by project/workspace, archive state, source, directory, or recent activity.
 - Archive, unarchive, and permanently delete one or many tasks.
 - Optionally move selected working directories to the system Trash while keeping other project files.
-- Group spawned sub-agent tasks under collapsible parent rows and avoid duplicate cascade deletion requests.
+- Hide spawned agents in the desktop main list; deleting a parent includes descendants and preserves protected families.
 - Protect running tasks and require an explicit irreversible-deletion acknowledgement.
 - Warn when other Codex processes may make cross-process running status incomplete.
 - Detect and repair Codex desktop Recents entries whose underlying tasks have already been deleted.
@@ -71,6 +71,17 @@ Download the package for your platform from [GitHub Releases](https://github.com
 - **Windows:** run the NSIS installer or unpack the ZIP build. Unsigned builds may trigger SmartScreen; inspect the publisher and release checksum before choosing **More info > Run anyway**.
 - **macOS:** open the DMG or ZIP build. Unsigned builds may require right-clicking the app and choosing **Open**, or approving it in **System Settings > Privacy & Security**.
 - **Linux:** install the DEB package or mark the AppImage executable and launch it.
+
+Desktop 1.0.0 also includes a Linux x64 Flatpak bundle:
+
+```sh
+flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+flatpak install --user flathub org.freedesktop.Platform//25.08
+flatpak install --user ./Threadbox-for-Codex-1.0.0-linux-x64.flatpak
+flatpak run io.github.iris_neko.codex_threadbox
+```
+
+This is a GitHub Release bundle, not a Flathub listing. Flatpak uses host filesystem access for metadata and optional Trash, and host-command access for the installed Codex CLI. It does not bundle Codex. Choose the host CLI's absolute path in Settings if it is unavailable on the host login-shell PATH.
 
 Every release includes `SHA256SUMS.txt`.
 

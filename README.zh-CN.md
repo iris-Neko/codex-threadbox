@@ -14,12 +14,12 @@ Threadbox 将所有工作目录中的 Codex 任务记录汇总到一个可搜索
 
 - 跨工作目录列出活动和归档任务。
 - 搜索标题、摘要、路径、来源和任务 ID。
-- 桌面端聊天按 Project 聚合，VS Code/CLI 聊天按实际工作目录聚合，未加入 Project 的桌面端聊天归入独立任务。
+- 桌面端读取真实项目名称和归属，项目与工作目录分区展示，项目可以展开查看主任务。
 - 可直接在 VS Code 的 Codex 侧边栏中把本机或远端任务整理为 Threadbox 项目，支持拖放和多选操作。
 - 支持分组/平铺视图，并可按项目或工作区、归档状态、来源、目录和更新时间筛选。
 - 单项或批量归档、取消归档和永久删除。
 - 可逐个选择将工作目录移入系统回收站，同时保留其他任务的代码。
-- 将派生子代理任务折叠在父任务下，并避免对级联删除后的子任务重复提交请求。
+- 桌面端隐藏子智能体，删除主任务时一起删除派生任务；运行中或置顶的子任务会保护整组。
 - 保护运行中任务，并要求明确勾选不可恢复确认。
 - 检测到其他 Codex 进程时提示跨进程状态可能不完整。
 - 检测并修复任务本体已删除、但仍残留在 Codex 桌面端“最近任务”中的条目。
@@ -71,6 +71,17 @@ npm install -g @openai/codex@latest
 - **Windows：**运行 NSIS 安装程序或解压 ZIP。未签名版本可能触发 SmartScreen；核对发布者和校验值后，可选择“更多信息 > 仍要运行”。
 - **macOS：**打开 DMG 或 ZIP。未签名版本可能需要右键应用选择“打开”，或在“系统设置 > 隐私与安全性”中批准。
 - **Linux：**安装 DEB，或者给 AppImage 增加执行权限后运行。
+
+桌面端 1.0.0 同时提供 Linux x64 Flatpak 安装包：
+
+```sh
+flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+flatpak install --user flathub org.freedesktop.Platform//25.08
+flatpak install --user ./Threadbox-for-Codex-1.0.0-linux-x64.flatpak
+flatpak run io.github.iris_neko.codex_threadbox
+```
+
+这是 GitHub Release 中的独立安装包，尚未上架 Flathub。Flatpak 申请宿主机文件访问权限以读取元数据、执行可选的目录回收站操作，并通过宿主机命令权限运行已安装的 Codex CLI，不内置 Codex。若宿主机登录 shell 找不到 Codex，请在设置中填写 CLI 的绝对路径。
 
 每个 Release 都附带 `SHA256SUMS.txt`。
 

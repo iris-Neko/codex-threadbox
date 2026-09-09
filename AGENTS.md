@@ -8,7 +8,7 @@ release workflow unless the request explicitly requires it.
 
 | Product | Current version | Primary paths | Release tag |
 | --- | --- | --- | --- |
-| Desktop | `0.3.0` | `src/`, Electron configuration, desktop packaging | `v<version>` |
+| Desktop | `1.0.0` | `src/`, Electron configuration, desktop packaging | `v<version>` |
 | CLI | `0.3.1` | `packages/cli/` | `cli-v<version>` |
 | VS Code | `0.4.1` | `packages/vscode/` | `vscode-v<version>` |
 

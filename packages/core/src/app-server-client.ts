@@ -6,6 +6,7 @@ export interface AppServerClientDescriptor {
   name: string
   title: string
   version: string
+  experimentalApi?: boolean
 }
 
 interface RpcSuccess<T> {
@@ -120,7 +121,8 @@ export class AppServerClient implements RpcClientLike {
         name: this.descriptor.name,
         title: this.descriptor.title,
         version: this.descriptor.version
-      }
+      },
+      ...(this.descriptor.experimentalApi ? { capabilities: { experimentalApi: true } } : {})
     })
     this.sendNotification('initialized', {})
   }

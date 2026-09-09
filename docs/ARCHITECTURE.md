@@ -18,6 +18,36 @@ Desktop Project tasks are grouped by `projectId`, and projectless tasks fall bac
 
 ## Desktop host
 
+Desktop 1.0 uses its own renderer composition: project/directory navigation and a
+root-task list, with secondary filters in a disclosure. Projects and directories
+are separate sidebar sections: projects group by official project ID and expand
+to main-task shortcuts, while directory filters group all main tasks by working
+path. Projectless desktop tasks retain an independent-tasks entry. Spawned agents are not
+independently displayed or selected. Unlinked internal tasks have a separate
+cleanup scope. Selection counts represent visible tasks; delete confirmation
+includes descendants. A running or pinned descendant blocks its parent's delete
+action, and the service rechecks protection against refreshed inventory. Pin and
+archive actions target explicitly selected tasks only. Shared UI dialogs remain
+reused, without changing the VS Code manager or CLI behavior.
+
+`DesktopProjects` reads the paginated official `project/list` endpoint with an
+explicit desktop-only experimental API opt-in. CLI and VS Code retain their
+default handshake. On older servers, the desktop adapter supports a read-only
+fallback to the local project catalog in `.codex-global-state.json`. During an
+incomplete desktop project migration, it uses only explicit local project
+assignments, scoped to this `CODEX_HOME` and excluding projectless tasks. Canonical
+thread project IDs take precedence. Names never come from working-directory
+guesses, and empty projects remain visible. The adapter returns only project
+metadata and membership; it never writes or migrates official project data,
+reads conversation bodies, or changes task state. Retrieval failures are shown
+separately from an empty project list.
+
+The Flatpak desktop build injects a host-process launcher into the core runtime.
+It invokes `flatpak-spawn --host --watch-bus` with literal argument arrays and an
+explicit `CODEX_HOME`; only the static login-shell trampoline is shell code.
+Native desktop, CLI, and VS Code retain the default launcher. Flatpak ships no
+Codex binary and requests host filesystem and host-command access explicitly.
+
 Electron runs the renderer with sandboxing, context isolation, and no Node integration. A preload exposes only the typed API over fixed IPC channels. The main process validates IDs and known paths, stores language and optional CLI path settings, starts App Server, opens working directories, and owns two desktop-only adapters:
 
 - selected working-directory cleanup through the operating system Trash;

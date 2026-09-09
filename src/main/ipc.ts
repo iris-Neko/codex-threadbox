@@ -7,8 +7,7 @@ import {
 } from '../shared/contracts'
 import type { AppServerClient, CodexRuntime, ThreadService } from '@threadbox/core'
 import type { SettingsStore } from './settings-store'
-
-const EMPTY_PROJECTS = { projects: [], assignments: {}, refreshedAt: 0 }
+import type { DesktopProjects } from './desktop-projects'
 
 function validIds(value: unknown): string[] {
   if (!Array.isArray(value) || value.length > 500) throw new Error('Invalid thread selection.')
@@ -37,7 +36,8 @@ export function registerIpcHandlers(
   service: ThreadService,
   settings: SettingsStore,
   runtime: CodexRuntime,
-  client: AppServerClient
+  client: AppServerClient,
+  projects: DesktopProjects
 ): void {
   ipcMain.handle(IPC_CHANNELS.platformCapabilities, () => ({
     host: 'desktop',
@@ -64,7 +64,7 @@ export function registerIpcHandlers(
     if (typeof pinned !== 'boolean') throw new Error('Invalid pin state.')
     return service.setPinned(validIds(ids), pinned)
   })
-  ipcMain.handle(IPC_CHANNELS.listProjects, () => EMPTY_PROJECTS)
+  ipcMain.handle(IPC_CHANNELS.listProjects, () => projects.list())
   ipcMain.handle(IPC_CHANNELS.createProject, () => {
     throw new Error('Project management is only available in the VS Code extension.')
   })

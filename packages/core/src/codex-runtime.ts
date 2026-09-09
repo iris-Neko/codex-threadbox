@@ -26,6 +26,8 @@ interface CapturedProcess {
   code: number | null
 }
 
+export type RuntimeLauncher = (command: string, args: string[], options?: SpawnOptions) => ChildProcess
+
 function launch(command: string, args: string[], options: SpawnOptions = {}): ChildProcess {
   if (process.platform === 'win32' && extname(command).toLowerCase() === '.ps1') {
     return spawn('pwsh.exe', ['-NoProfile', '-File', command, ...args], options)
@@ -37,10 +39,11 @@ function capture(
   command: string,
   args: string[],
   timeoutMs = 8_000,
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
+  launcher: RuntimeLauncher = launch
 ): Promise<CapturedProcess> {
   return new Promise((resolve, reject) => {
-    const child = launch(command, args, {
+    const child = launcher(command, args, {
       windowsHide: true,
       env,
       stdio: ['ignore', 'pipe', 'pipe']
@@ -148,7 +151,8 @@ export class CodexRuntime implements CodexRuntimeLike {
 
   constructor(
     private readonly settings: { load(): Promise<{ customCliPath: string | null }> },
-    private readonly env: NodeJS.ProcessEnv = process.env
+    private readonly env: NodeJS.ProcessEnv = process.env,
+    private readonly launcher: RuntimeLauncher = launch
   ) {}
 
   async probe(force = false): Promise<RuntimeProbe> {
@@ -167,7 +171,7 @@ export class CodexRuntime implements CodexRuntimeLike {
     for (const command of candidates) {
       lastCommand = command
       try {
-        const result = await capture(command, ['--version'], 8_000, this.env)
+        const result = await capture(command, ['--version'], 8_000, this.env, this.launcher)
         launchedCandidate = true
         const version = parseCodexVersion(`${result.stdout}\n${result.stderr}`)
         if (result.code === 0 && version) {
@@ -210,7 +214,7 @@ export class CodexRuntime implements CodexRuntimeLike {
   }
 
   spawnAppServer(command: string): ChildProcess {
-    const child = launch(command, ['app-server', '--stdio'], {
+    const child = this.launcher(command, ['app-server', '--stdio'], {
       windowsHide: true,
       env: this.env,
       stdio: ['pipe', 'pipe', 'ignore']
@@ -226,7 +230,7 @@ export class CodexRuntime implements CodexRuntimeLike {
     if (process.env.THREADBOX_TEST_DISABLE_PROCESS_SCAN === '1') return 0
     try {
       if (process.platform === 'win32') {
-        const result = await capture('tasklist.exe', ['/fo', 'csv', '/nh'], 8_000, this.env)
+        const result = await capture('tasklist.exe', ['/fo', 'csv', '/nh'], 8_000, this.env, this.launcher)
         return result.stdout
           .split(/\r?\n/)
           .map((line) => line.match(/^"([^"]+)","(\d+)"/))
@@ -238,7 +242,7 @@ export class CodexRuntime implements CodexRuntimeLike {
           }).length
       }
 
-      const result = await capture('ps', ['-axo', 'pid=,comm=,args='], 8_000, this.env)
+      const result = await capture('ps', ['-axo', 'pid=,comm=,args='], 8_000, this.env, this.launcher)
       return result.stdout
         .split(/\r?\n/)
         .map((line) => line.trim().match(/^(\d+)\s+(\S+)\s+(.*)$/))

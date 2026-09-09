@@ -32,7 +32,25 @@ linux:
   target:
     - AppImage
     - deb
+    - flatpak
   artifactName: Threadbox-for-Codex-${version}-linux-${arch}.${ext}
+flatpak:
+  runtime: org.freedesktop.Platform
+  runtimeVersion: '25.08'
+  sdk: org.freedesktop.Sdk
+  base: org.electronjs.Electron2.BaseApp
+  baseVersion: '25.08'
+  branch: stable
+  useWaylandFlags: true
+  finishArgs:
+    - --socket=wayland
+    - --socket=fallback-x11
+    - --share=ipc
+    - --device=dri
+    - --share=network
+    - --filesystem=host
+    - --talk-name=org.freedesktop.Flatpak
+    - --talk-name=org.freedesktop.Notifications
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true

@@ -8,8 +8,10 @@ import {
   WorkingDirectoryCleaner
 } from '@threadbox/core'
 import { DesktopRecentsRepair } from './desktop-recents-repair'
+import { DesktopProjects } from './desktop-projects'
 import { registerIpcHandlers } from './ipc'
 import { SettingsStore } from './settings-store'
+import { flatpakHostLauncher } from './flatpak-runtime'
 
 let mainWindow: BrowserWindow | null = null
 let appServerClient: AppServerClient | null = null
@@ -47,13 +49,15 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   const settings = new SettingsStore()
-  const runtime = new CodexRuntime(settings)
+  const codexHome = process.env.CODEX_HOME ?? join(app.getPath('home'), '.codex')
+  const runtime = new CodexRuntime(settings, process.env,
+    process.platform === 'linux' && process.env.FLATPAK_ID ? flatpakHostLauncher(codexHome) : undefined)
   appServerClient = new AppServerClient(runtime, {
     name: 'codex_threadbox',
     title: 'Threadbox for Codex',
-    version: packageJson.version
+    version: packageJson.version,
+    experimentalApi: true
   })
-  const codexHome = process.env.CODEX_HOME ?? join(app.getPath('home'), '.codex')
   const platformProtectedPaths =
     process.platform === 'win32'
       ? [process.env.SystemRoot, process.env.ProgramFiles, process.env['ProgramFiles(x86)']]
@@ -77,7 +81,7 @@ app.whenReady().then(() => {
     join(codexHome, 'state_5.sqlite')
   )
   const threadService = new ThreadService(appServerClient, directoryCleaner, desktopRecentsRepair)
-  registerIpcHandlers(threadService, settings, runtime, appServerClient)
+  registerIpcHandlers(threadService, settings, runtime, appServerClient, new DesktopProjects(appServerClient, codexHome))
 
   Menu.setApplicationMenu(null)
   createWindow()

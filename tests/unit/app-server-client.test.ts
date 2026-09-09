@@ -34,6 +34,14 @@ afterEach(() => {
 })
 
 describe('AppServerClient', () => {
+  it('only opts explicitly configured hosts into experimental APIs', async () => {
+    for (const experimentalApi of [false, true]) {
+      const client = new AppServerClient(runtime(), { ...descriptor, experimentalApi })
+      clients.push(client)
+      const params = await client.request<{ capabilities?: { experimentalApi: boolean } }>('test/initializeParams')
+      expect(params.capabilities).toEqual(experimentalApi ? { experimentalApi: true } : undefined)
+    }
+  })
   it('initializes before requests and ignores interleaved notifications', async () => {
     const client = new AppServerClient(runtime(), descriptor)
     clients.push(client)
