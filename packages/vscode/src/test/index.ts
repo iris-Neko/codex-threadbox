@@ -1,9 +1,10 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as vscode from 'vscode'
 import type { ThreadboxExtensionApi } from '../extension'
 import { ThreadboxSidebarProvider, type SidebarItem } from '../sidebar'
+import { LocalClaudeHistoryReader } from '../claude-history-reader'
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message)
@@ -16,7 +17,7 @@ export async function run(): Promise<void> {
   const fakeVersionFile = join(codexHome, 'fake-version.txt')
   const configuration = vscode.workspace.getConfiguration('threadbox')
   try {
-    await writeFile(fakeVersionFile, '0.153.2\n', 'utf8')
+    await writeFile(fakeVersionFile, '0.156.1\n', 'utf8')
     process.env.THREADBOX_FAKE_VERSION_FILE = fakeVersionFile
     await configuration.update('codexBinary', fakeCli, vscode.ConfigurationTarget.Global)
     await configuration.update('codexHome', codexHome, vscode.ConfigurationTarget.Global)
@@ -34,6 +35,34 @@ export async function run(): Promise<void> {
       'Threadbox did not default to the Codex sidebar.'
     )
     const exported = await extension.activate()
+    const claudeHome = process.env.CLAUDE_CONFIG_DIR
+    const claudeLog = process.env.THREADBOX_TEST_CLAUDE_LOG
+    assert(claudeHome && claudeLog, 'Isolated Claude environment was not provided.')
+    const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+    assert(workspacePath, 'Missing isolated test workspace.')
+    const claudeId = '11111111-1111-4111-8111-111111111111'
+    const otherClaudeId = '22222222-2222-4222-8222-222222222222'
+    for (const [id, cwd] of [[claudeId, workspacePath], [otherClaudeId, join(workspacePath, 'other-project')]]) {
+      const project = join(claudeHome, 'projects', cwd!.replace(/[^a-zA-Z0-9]/gu, '-'))
+      await mkdir(project, { recursive: true })
+      await writeFile(join(project, id + '.jsonl'), [
+        { type: 'user', sessionId: id, uuid: id, parentUuid: null, cwd, isSidechain: false,
+          timestamp: '2026-09-01T00:00:00Z', message: { role: 'user', content: 'Private test prompt' } },
+        { type: 'custom-title', sessionId: id, customTitle: 'Claude fixture ' + id }
+      ].map((value) => JSON.stringify(value)).join('\n') + '\n')
+    }
+    const claudeReader = new LocalClaudeHistoryReader(join(extension.extensionUri.fsPath, 'dist', 'claude-history-worker.mjs'))
+    try {
+      const history = await claudeReader.list(claudeHome)
+      assert(history.length === 2 && history.some((item) => item.id === otherClaudeId),
+        'Packaged Claude reader did not list history outside the current directory.')
+      assert(!JSON.stringify(history).includes('Private test prompt'), 'Claude view leaked message bodies.')
+    } finally { claudeReader.dispose() }
+    await vscode.commands.executeCommand('threadbox.claudeRefresh')
+    await vscode.commands.executeCommand('threadbox.claudeOpen', claudeId)
+    const openedClaude = (await readFile(claudeLog, 'utf8')).trim().split(/\r?\n/).map((line) => JSON.parse(line))
+    assert(openedClaude.length === 1 && JSON.stringify(openedClaude[0]) === JSON.stringify([claudeId]),
+      'Claude history did not resume the selected ID without a prompt.')
     const api = exported.getThreadboxApi()
     const capabilities = await api.getPlatformCapabilities()
     assert(capabilities.host === 'vscode', 'VS Code capabilities were not returned.')
@@ -46,11 +75,11 @@ export async function run(): Promise<void> {
     assert(!capabilities.desktopRecentsRepair, 'VS Code must not expose Recents repair.')
 
     const status = await api.getEnvironmentStatus()
-    assert(status.state === 'outdated' && status.cliVersion === '0.153.2',
+    assert(status.state === 'outdated' && status.cliVersion === '0.156.1',
       'Fake Codex did not start below the minimum version.')
     assert(api.updateCodexCli, 'VS Code did not expose Codex CLI update.')
     const updatedStatus = await api.updateCodexCli()
-    assert(updatedStatus.state === 'ready' && updatedStatus.cliVersion === '0.153.4',
+    assert(updatedStatus.state === 'ready' && updatedStatus.cliVersion === '0.157.1',
       'VS Code did not update and re-probe the fake Codex CLI.')
     const listed = await api.listThreads()
     assert(listed.threads.length === 4, 'VS Code did not load active and archived fake tasks.')
@@ -135,6 +164,9 @@ export async function run(): Promise<void> {
     const result = await api.archiveThreads(['019f0000-0000-7000-8000-000000000001'])
     assert(result.succeeded.length === 1, 'VS Code archive operation did not complete.')
     const commands = await vscode.commands.getCommands(true)
+    for (const command of ['claudeRefresh', 'claudeSearch', 'claudeOpen', 'claudeCopyId']) {
+      assert(commands.includes('threadbox.' + command), 'Missing Claude command: ' + command)
+    }
     assert(commands.includes('threadbox.refreshSidebar'), 'Threadbox sidebar refresh was not registered.')
     assert(commands.includes('threadbox.updateCodexCli'), 'Threadbox CLI update command was not registered.')
     assert(commands.includes('threadbox.searchSidebar'), 'Threadbox sidebar search was not registered.')

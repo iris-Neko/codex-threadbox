@@ -3,7 +3,6 @@ import { homedir } from 'node:os'
 import * as vscode from 'vscode'
 import {
   AppServerClient,
-  CodexRuntime,
   ThreadService,
   type ThreadListOptions
 } from '../../core/src/index'
@@ -41,6 +40,8 @@ import { requireWorkspaceTrust } from './workspace-trust'
 import { renameThread } from './rename-thread'
 import { knownCodexExecutables, LinuxWriterRecovery } from './linux-writer-recovery'
 import { recoverWriterAndTrash } from './writer-recovery'
+import { registerClaudeHistory } from './claude-integration'
+import { VscodeCodexRuntime as CodexRuntime } from './codex-runtime'
 
 const CONFIGURATION = 'threadbox'
 const REFRESH_SIDEBAR_COMMAND = 'threadbox.refreshSidebar'
@@ -574,6 +575,7 @@ export interface ThreadboxExtensionApi {
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<ThreadboxExtensionApi> {
+  registerClaudeHistory(context, configuredLocale)
   const version = String(context.extension.packageJSON.version ?? '1.0.0')
   const runtime = new RuntimeHost(version)
   await migrateLegacyProjectStorage(context.globalStorageUri.fsPath)

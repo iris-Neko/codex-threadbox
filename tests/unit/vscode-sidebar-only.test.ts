@@ -13,7 +13,8 @@ it('removes the Manager command, activation and Webview implementation', () => {
   expect(existsSync('packages/ui/src/App.tsx')).toBe(true)
 })
 it('keeps search, filters, refresh and an opt-in multiselect button in the top toolbar', () => {
-  const actions = manifest.contributes.menus['view/title'] as Array<{ command: string; group: string }>
+  const actions = (manifest.contributes.menus['view/title'] as Array<{ command: string; group: string; when: string }>)
+    .filter((c) => c.when.includes('threadbox\\.sidebar'))
   expect(actions.filter((c) => c.group.startsWith('navigation')).map((c) => c.command)).toEqual([
     'threadbox.searchSidebar', 'threadbox.filterSidebar', 'threadbox.refreshSidebar', 'threadbox.toggleMultiSelect'
   ])
@@ -26,4 +27,14 @@ it('keeps search, filters, refresh and an opt-in multiselect button in the top t
 it('retains native workspace trust guards after removing Webview RPC', () => {
   expect(() => requireWorkspaceTrust(false)).toThrow()
   expect(() => requireWorkspaceTrust(true)).not.toThrow()
+})
+it('keeps Claude history separate from Codex mutations and available without a Codex container', () => {
+  expect(manifest.contributes.views.threadbox.some((view: { id: string }) => view.id === 'threadbox.claudeHistory')).toBe(true)
+  expect(manifest.contributes.viewsContainers.activitybar[0].when).toContain('config.threadbox.claudeHistoryEnabled')
+  const actions = manifest.contributes.menus['view/item/context'] as Array<{ command: string; when: string }>
+  expect(actions.filter((action) => action.when.includes('threadbox.claudeHistory')).map((action) => action.command)).toEqual([
+    'threadbox.claudeOpen', 'threadbox.claudeCopyId'
+  ])
+  expect(manifest.contributes.configuration.properties['threadbox.claudeConfigDir'].scope).toBe('machine')
+  expect(manifest.extensionKind).toEqual(['workspace'])
 })

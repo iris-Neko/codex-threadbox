@@ -3,10 +3,8 @@ import { spawnSync, type ChildProcess, type SpawnOptions } from 'node:child_proc
 import { homedir } from 'node:os'
 import { dirname, extname, posix, win32 } from 'node:path'
 import semver from 'semver'
-import {
-  MINIMUM_CODEX_VERSION,
-  parseCodexVersion
-} from '../../core/src/codex-runtime'
+import { parseCodexVersion } from '../../core/src/codex-runtime'
+import { VSCODE_MINIMUM_CODEX_VERSION as MINIMUM_CODEX_VERSION } from './codex-runtime'
 
 const DEFAULT_TIMEOUT_MS = 5 * 60_000
 const VERIFY_TIMEOUT_MS = 8_000

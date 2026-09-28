@@ -1,0 +1,10 @@
+{
+  "name": "claude-code",
+  "publisher": "Anthropic",
+  "version": "2.1.283",
+  "engines": { "vscode": "^1.96.0" },
+  "main": "./extension.cjs",
+  "contributes": {
+    "commands": [{ "command": "claude-vscode.editor.open", "title": "Test-only Claude resume" }]
+  }
+}

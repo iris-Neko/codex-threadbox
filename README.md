@@ -44,7 +44,7 @@ The CLI and VS Code extension always preserve working directories. Unsupported a
 
 ## Requirements
 
-- Codex CLI `0.153.3` or newer available on `PATH`.
+- Codex CLI `0.153.3` or newer for Desktop/CLI; `0.157.0` or newer for the VS Code Codex features. Claude history does not require Codex CLI.
 - Desktop: Windows 10/11, macOS, or a modern Linux desktop.
 - CLI: Node.js `22.13.0` or newer.
 - Extension: VS Code `1.96.0` or newer. Remote sessions require Codex on the remote extension host.
@@ -94,6 +94,14 @@ Running `threadbox` in a TTY opens the interactive manager. Scriptable commands 
 
 ## VS Code install
 
+VS Code 1.1 adds **Claude Code History** in the Threadbox Activity Bar: browse
+and search saved conversations across all folders on the current host, even
+without Codex CLI. Double-click to continue in the official Claude Code plugin.
+For another folder, Threadbox asks to open the original directory in a new
+window before resuming. Claude history is read-only in this first integration;
+Codex project/Trash actions do not apply to it. See the
+[extension guide](packages/vscode/README.md) for configuration and limitations.
+
 Install **Threadbox for Codex** from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=irisNeko.codex-threadbox-vscode), [Open VSX](https://open-vsx.org/extension/irisNeko/codex-threadbox-vscode), or the release VSIX. Open the official Codex sidebar and expand **Threadbox** to search tasks and organize them with **Import Current Workspace**, multi-select, drag-and-drop, or **Move to Project**; the move picker can create a project without leaving the workflow. Set `threadbox.sidebarLocation` to `standalone` for the original Activity Bar container. Threadbox also falls back there when a compatible Codex sidebar is unavailable. The extension is sidebar-only; use the toolbar to toggle multi-select, then right-click or drag tasks to organize them; Archived is a separate directory-grouped section.
 
 The extension declares `extensionKind: ["workspace"]`. In Remote SSH, Dev Containers, and Codespaces, Codex CLI, `CODEX_HOME`, task data, and the App Server process all remain on the remote host. Configure `threadbox.codexBinary`, `threadbox.codexHome`, or `threadbox.language` as machine-scoped settings when needed. If Codex CLI is missing, the sidebar can run OpenAI's [official standalone installer](https://developers.openai.com/codex/cli#getting-started) for the current user, verify the exact installed executable, and then select it in the remote machine-scoped settings. Older CLIs still use `codex update`. If a system npm installation fails with `EACCES` or `EPERM`, Threadbox recommends updating that one installation with `sudo`; choosing a user-level replacement instead produces an explicit prompt to uninstall the old system copy so PATH does not remain ambiguous. Sudo commands run visibly in the remote integrated terminal and Threadbox never reads a password. An untrusted workspace cannot install or start Codex or modify task metadata.
@@ -108,7 +116,7 @@ Project files are kept by default. The deletion dialog lists the exact task `cwd
 
 The CLI and VS Code extension do not contain the operating-system directory Trash or Recents adapters. CLI deletion removes task records directly through App Server. VS Code ordinary deletion uses its metadata-only, archive-backed task Trash; only **Empty Trash** permanently removes those task records through App Server. Both products always preserve working directories.
 
-This release is validated against the two latest stable Codex CLI versions, `0.153.3` and `0.153.4`. Codex `0.153.2` and older are unsupported. Newer versions remain forward-compatible on a best-effort basis: unknown response fields are accepted, while optional controls such as pinning stay capability-gated. Threadbox never works around a missing task API by modifying Codex task state files.
+VS Code 1.1.0 is validated against the two latest stable Codex CLI versions, `0.157.0` and `0.157.1`; older versions must be upgraded. Desktop and Threadbox CLI keep their existing `0.153.3` runtime baseline. Newer versions remain forward-compatible on a best-effort basis: unknown response fields are accepted, while optional controls such as pinning stay capability-gated. Threadbox never works around a missing task API by modifying Codex task state files.
 
 Runtime status belongs to an App Server process, so a separate Threadbox process cannot guarantee that it sees work running inside another Codex desktop or IDE process. Threadbox displays a warning whenever other Codex processes are detected.
 

@@ -44,7 +44,7 @@ CLI 和 VS Code 插件始终保留工作目录，不提供递归删目录的隐�
 
 ## 环境要求
 
-- 系统 `PATH` 中存在 Codex CLI `0.153.3` 或更新版本。
+- 桌面端和 CLI 需要 Codex CLI `0.153.3` 或更新版本；VS Code 的 Codex 功能需要 `0.157.0` 或更新版本。Claude 历史不依赖 Codex CLI。
 - 桌面版：Windows 10/11、macOS 或现代 Linux 桌面。
 - CLI：Node.js `22.13.0` 或更新版本。
 - 插件：VS Code `1.96.0` 或更新版本；远程环境需要在远端扩展宿主安装 Codex。
@@ -94,6 +94,13 @@ threadbox
 
 ## VS Code 插件安装
 
+扩展 1.1 新增 **Threadbox 活动栏 → Claude Code History**：汇总当前主机所有
+文件夹下的 Claude Code 历史，按原目录分类，可搜索名称、目录和会话 ID，不依赖
+Codex CLI。双击可以在官方 Claude Code 插件中继续对话；如果不在原目录，会先
+确认新开原目录窗口再恢复，当前窗口保留。这一版只查看和打开 Claude 历史，
+不会将 Codex 的项目、改名、归档或垃圾箱操作套用到 Claude 会话上。远端只读取
+当前远端主机的数据，不会自动同步其他服务器或云端历史。
+
 可从 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=irisNeko.codex-threadbox-vscode)、[Open VSX](https://open-vsx.org/extension/irisNeko/codex-threadbox-vscode) 或 Release 中的 VSIX 安装 **Threadbox for Codex**。打开官方 Codex 侧边栏并展开 **Threadbox**，可用**导入当前工作区**、拖放、多选或**移动到项目**管理项目树；将 `threadbox.sidebarLocation` 设置为 `standalone` 可恢复原来的独立活动栏入口，未检测到兼容的 Codex 侧边栏时也会自动回退。扩展仅保留原生侧边栏，顶部可开启多选，通过右键或拖放整理任务；已归档单独按目录分类，桌面端完整管理器不受影响。
 
 插件声明了 `extensionKind: ["workspace"]`。在 Remote SSH、Dev Container 和 Codespaces 中，Codex CLI、`CODEX_HOME`、任务数据和 App Server 进程都位于远端。需要时使用 machine-scoped 的 `threadbox.codexBinary`、`threadbox.codexHome` 和 `threadbox.language` 设置。Codex CLI 缺失时，侧边栏和完整管理器可以为当前用户运行 OpenAI 的[官方独立安装脚本](https://developers.openai.com/codex/cli#getting-started)，验证确切的用户级可执行文件后再写入远端 machine-scoped 设置；旧版本仍先运行 `codex update`。系统级 npm 安装遇到 `EACCES` 或 `EPERM` 时，Threadbox 会优先建议用 `sudo` 原地更新，只保留一套 Codex；如果用户改选用户级独立安装，安装成功后会明确提示卸载旧的系统版本，避免 PATH 冲突。sudo 命令只会显示在远端集成终端中，Threadbox 不读取密码。未信任工作区不会安装或启动 Codex，也不会修改任务元数据。
@@ -108,7 +115,7 @@ Threadbox 项目名称和根任务归属保存在该扩展宿主的 VS Code 全�
 
 CLI 和 VS Code 插件不包含操作系统目录回收站或“最近任务”修复适配器。CLI 直接通过 App Server 删除任务记录；VS Code 的普通删除会先进入基于归档状态和本地分组实现的任务垃圾箱，只有**清空垃圾箱**才通过 App Server 永久删除其中的任务记录。两者始终保留全部工作目录。
 
-此版本针对最新两个稳定版 Codex CLI `0.153.3` 和 `0.153.4` 完成验证，不再支持 `0.153.2` 及更旧版本。对于更新版本，Threadbox 会尽力保持向前兼容：允许未知响应字段，并继续按运行时能力启用置顶等可选功能。Threadbox 不会为了绕过缺失的任务接口而修改 Codex 任务状态文件。
+VS Code 1.1.0 针对最新两个稳定版 Codex CLI `0.157.0` 和 `0.157.1` 验证，更旧版本需要升级。桌面端和 Threadbox CLI 仍保持既有的 `0.153.3` 运行时基线。对于更新版本，Threadbox 会尽力保持向前兼容：允许未知响应字段，并继续按运行时能力启用置顶等可选功能。Threadbox 不会为了绕过缺失的任务接口而修改 Codex 任务状态文件。
 
 运行状态属于某个 App Server 进程。独立的 Threadbox 无法保证看到另一个 Codex 桌面端或 IDE 进程中的活动任务，因此检测到其他 Codex 进程时会明确提示。
 

@@ -10,7 +10,7 @@ release workflow unless the request explicitly requires it.
 | --- | --- | --- | --- |
 | Desktop | `0.3.0` | `src/`, Electron configuration, desktop packaging | `v<version>` |
 | CLI | `0.3.1` | `packages/cli/` | `cli-v<version>` |
-| VS Code | `1.0.0` | `packages/vscode/` | `vscode-v<version>` |
+| VS Code | `1.1.0` | `packages/vscode/` | `vscode-v<version>` |
 
 The desktop version comes from the root `package.json`. The CLI and VS Code
 versions come only from their own package manifests. Do not synchronize these
@@ -65,6 +65,13 @@ to shared packages.
   public App Server and must not be presented as manageable Threadbox projects.
 - The sidebar is the primary workflow. Preserve spawned-task folding and open
   tasks in the official Codex view when that integration is available.
+- Claude Code history is a separate read-only VS Code adapter. Use official SDK
+  metadata readers only; do not expose Codex mutations for Claude sessions. Never
+  start a model or load transcript messages to list history. Tests must isolate
+  `CLAUDE_CONFIG_DIR` as well as `CODEX_HOME` and the VS Code extensions directory.
+- Cross-folder Claude navigation requires explicit confirmation and an exact
+  original-directory window. Validate the session again before handing it to
+  the official extension; pending navigation metadata expires in five minutes.
 
 ## Data and deletion safety
 
@@ -77,9 +84,10 @@ to shared packages.
   safely after individual failures.
 - Tests must use the fake stdio server or an isolated temporary `CODEX_HOME`.
   Never list, archive, pin, or delete the developer's real tasks from tests.
-- Unknown fields from newer App Server versions must remain parseable. The
-  minimum supported Codex CLI version is `0.153.3`. Each release validates only
-  the two latest stable CLI releases and raises this floor deliberately.
+- Unknown fields from newer App Server versions must remain parseable. VS Code
+  requires Codex CLI `0.157.0` and validates `0.157.0` / `0.157.1`. Each VS Code
+  release validates only the two latest stable CLI releases and raises its
+  host-local floor deliberately. Desktop/CLI retain their `0.153.3` baseline.
 
 ## Working rules
 

@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { cp, mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { runTests, downloadAndUnzipVSCode } from '@vscode/test-electron'
@@ -19,8 +19,18 @@ const fakeCli = resolve(
 const vsix = resolve(packageRoot, `../../dist/threadbox-for-codex-${manifest.version}.vsix`)
 const fakeLog = join(workspace, 'fake-app-server.log')
 const fakeCreatedFile = join(workspace, 'fake-created-threads.json')
+const isolatedEnvironment = {
+  CODEX_HOME: join(workspace, 'isolated-codex'), CODEX_BINARY: fakeCli,
+  THREADBOX_FAKE_VERSION: '0.157.1', THREADBOX_FAKE_UPDATED_VERSION: '0.157.1',
+  CLAUDE_CONFIG_DIR: join(workspace, 'isolated-claude'),
+  THREADBOX_TEST_CLAUDE_LOG: join(workspace, 'fake-claude-open.log')
+}
+const previousEnvironment = Object.fromEntries(Object.keys(isolatedEnvironment).map((key) => [key, process.env[key]]))
+Object.assign(process.env, isolatedEnvironment)
 
 try {
+  await cp(resolve(packageRoot, '../../tests/fixtures/claude-vscode-extension'),
+    join(extensionsDirectory, 'anthropic.claude-code-2.1.283'), { recursive: true })
   const assets = await readdir(resolve(packageRoot, 'dist'))
   if (assets.some((name) => name.startsWith('webview'))) throw new Error('Manager Webview assets remain in the extension.')
   const bundle = await readFile(resolve(packageRoot, 'dist/extension.cjs'), 'utf8')
@@ -43,7 +53,7 @@ try {
     vscodeExecutablePath,
     extensionDevelopmentPath: packageRoot,
     extensionTestsPath: resolve(packageRoot, 'test-dist/index.cjs'),
-    launchArgs: [workspace, '--user-data-dir', developmentUserData,
+    launchArgs: [workspace, '--user-data-dir', developmentUserData, '--extensions-dir', extensionsDirectory,
       '--disable-workspace-trust', '--skip-welcome', '--skip-release-notes']
   })
 
@@ -83,6 +93,10 @@ try {
   }
   process.stdout.write('VS Code extension and installed VSIX smoke tests passed.\n')
 } finally {
+  for (const [key, value] of Object.entries(previousEnvironment)) {
+    if (value === undefined) delete process.env[key]
+    else process.env[key] = value
+  }
   delete process.env.THREADBOX_TEST_FAKE_CLI
   delete process.env.THREADBOX_FAKE_WORKSPACE
   delete process.env.THREADBOX_FAKE_LOG

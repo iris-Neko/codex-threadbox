@@ -47,6 +47,35 @@ Codex interface projects are not currently exposed by the public App Server, so 
 
 Task renaming is an optional host capability, enabled only by the VS Code adapter. Its native command validates the task ID and name, recheck workspace trust, read metadata without turns, call `thread/name/set`, and verify the persisted name. Renaming never resumes a conversation or perform rollback by deleting a task. The sidebar refreshes after success. Codex CLI 0.153.3/0.153.4 cannot rename archived rollouts directly, so archived/Trash entries require an explicit restore first; renaming does not silently unarchive them.
 
+### Claude Code history (VS Code only)
+
+The native `threadbox.claudeHistory` view is independent of `ThreadService` and
+Codex runtime availability. `LocalClaudeHistoryReader` runs the pinned Anthropic
+SDK's `listSessions` and `getSessionInfo` metadata APIs in a bounded-lifetime
+worker, with its own `CLAUDE_CONFIG_DIR` environment. The all-project listing
+deliberately omits `dir`; only IDs, bounded titles, cwd and timestamps cross back
+to the extension host. There is no query/model call, full-message API, history
+write, or shared `ThreadRecord` conversion. This keeps Codex deletion, Trash,
+project assignment and batch actions inaccessible to Claude entries.
+
+Claude's navigation command is workspace-scoped. Opening a session revalidates
+its metadata and original directory first. Only an exact single-folder match
+uses `claude-vscode.editor.open(sessionId)` directly; another folder or a
+multi-root workspace asks for a separate original-folder window. The extension
+host preserves the remote URI authority and leaves the current window intact.
+An atomic, expiring request in Threadbox global storage lets the new trusted
+window resume the selected ID after revalidation. Exclusive claim tombstones
+prevent duplicate consumption on Windows; stale or mismatched-home requests
+are not executed. No prompt or permission override is supplied. The official
+extension's own behavior applies after navigation.
+
+The adapter respects machine-scoped Claude environment variables, the host
+environment and a Threadbox browsing override. A browsing override that differs
+from the official extension prevents resume. The first integration covers local
+saved histories on one host, not cloud synchronization or Claude mutations.
+Unit and extension-host tests use temporary config directories and a simulated
+official navigation command, never developer histories or credentials.
+
 ## Deletion safety
 
 Permanent deletion refreshes inventory first. Running and pinned tasks are skipped. If a parent and descendant are selected, only the highest selected parent is submitted because App Server deletion cascades. Requests run sequentially, and one failure does not stop the remaining tasks. In VS Code, ordinary deletion first moves tasks into the archive-backed built-in Trash; permanent deletion is available only through Empty Trash.
@@ -61,6 +90,6 @@ Repair is explicit. It first creates an SQLite online backup under `~/.codex/bac
 
 ## Compatibility and local data
 
-Codex CLI `0.153.3` is the minimum supported runtime; older releases are rejected with an upgrade prompt. Each Threadbox release validates the two latest stable Codex CLI versions (`0.153.3` and `0.153.4` for this release), rather than maintaining older compatibility branches. The full blank-task/Trash/restore/empty lifecycle is tested with isolated data. Committed generated protocol files retain their original Codex CLI `0.150.1` provenance; runtime capabilities come from the installed CLI schema, newer unknown response fields remain parseable, and optional capabilities are gated at runtime.
+VS Code 1.1.0 requires Codex CLI `0.157.0` and validates the two latest stable versions, `0.157.0` and `0.157.1`. Its host-local runtime adapter overlays that minimum on shared discovery without changing Desktop or CLI's existing `0.153.3` baseline. Older VS Code runtimes are rejected with an upgrade prompt. The full blank-task/Trash/restore/empty lifecycle is tested with isolated data. Committed generated protocol files retain their original Codex CLI `0.150.1` provenance; runtime capabilities come from the installed CLI schema, newer unknown response fields remain parseable, and optional capabilities are gated at runtime.
 
 Threadbox has no telemetry and persists no task or conversation copy. Desktop stores interface language and optional CLI path. VS Code uses machine-scoped settings plus its host-local project names and task-ID assignments. The CLI stores no Threadbox settings.

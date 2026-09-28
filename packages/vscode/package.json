@@ -1,8 +1,8 @@
 {
   "name": "codex-threadbox-vscode",
   "displayName": "Codex Threadbox",
-  "description": "Manage Codex tasks and projects from the native VS Code sidebar, locally or remotely.",
-  "version": "1.0.0",
+  "description": "Manage Codex tasks and browse Claude Code history across folders, locally or remotely.",
+  "version": "1.1.0",
   "publisher": "irisNeko",
   "license": "MIT",
   "private": true,
@@ -25,6 +25,7 @@
   ],
   "keywords": [
     "codex",
+    "claude code",
     "tasks",
     "remote ssh"
   ],
@@ -33,6 +34,7 @@
   ],
   "activationEvents": [
     "onStartupFinished",
+    "onView:threadbox.claudeHistory",
     "onView:threadbox.sidebar",
     "onView:threadbox.sidebar.codexPrimary",
     "onView:threadbox.sidebar.codexSecondary"
@@ -41,6 +43,34 @@
   "icon": "dist/icon.png",
   "contributes": {
     "commands": [
+      {
+        "command": "threadbox.claudeRefresh",
+        "title": "Refresh Claude Code History",
+        "category": "Threadbox",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "threadbox.claudeSearch",
+        "title": "Search All Claude Code History",
+        "category": "Threadbox",
+        "icon": "$(search)"
+      },
+      {
+        "command": "threadbox.claudeClearSearch",
+        "title": "Clear Claude History Search",
+        "category": "Threadbox"
+      },
+      {
+        "command": "threadbox.claudeOpen",
+        "title": "Open in Claude Code",
+        "category": "Threadbox",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "threadbox.claudeCopyId",
+        "title": "Copy Claude Session ID",
+        "category": "Threadbox"
+      },
       {
         "command": "threadbox.toggleMultiSelect",
         "title": "Toggle Multi-select Mode",
@@ -237,12 +267,17 @@
           "id": "threadbox",
           "title": "Threadbox",
           "icon": "dist/activitybar.svg",
-          "when": "config.threadbox.sidebarLocation == standalone || !threadbox.codexContainerAvailable"
+          "when": "config.threadbox.sidebarLocation == standalone || !threadbox.codexContainerAvailable || config.threadbox.claudeHistoryEnabled"
         }
       ]
     },
     "views": {
       "threadbox": [
+        {
+          "id": "threadbox.claudeHistory",
+          "name": "Claude Code History",
+          "when": "config.threadbox.claudeHistoryEnabled"
+        },
         {
           "id": "threadbox.sidebar",
           "name": "Codex Tasks",
@@ -271,6 +306,16 @@
     "menus": {
       "view/title": [
         {
+          "command": "threadbox.claudeSearch",
+          "when": "view == threadbox.claudeHistory",
+          "group": "navigation@1"
+        },
+        {
+          "command": "threadbox.claudeRefresh",
+          "when": "view == threadbox.claudeHistory",
+          "group": "navigation@2"
+        },
+        {
           "command": "threadbox.searchSidebar",
           "when": "view =~ /^threadbox\\.sidebar/",
           "group": "navigation@1"
@@ -292,6 +337,16 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "threadbox.claudeOpen",
+          "when": "view == threadbox.claudeHistory && viewItem == threadbox.claude.session",
+          "group": "navigation@0"
+        },
+        {
+          "command": "threadbox.claudeCopyId",
+          "when": "view == threadbox.claudeHistory && viewItem == threadbox.claude.session",
+          "group": "navigation@1"
+        },
         {
           "command": "threadbox.renameThread",
           "when": "view =~ /^threadbox\\.sidebar/ && viewItem =~ /^threadbox\\.thread\\.active\\./",
@@ -417,6 +472,18 @@
     "configuration": {
       "title": "Threadbox for Codex",
       "properties": {
+        "threadbox.claudeHistoryEnabled": {
+          "type": "boolean",
+          "default": true,
+          "scope": "machine",
+          "description": "Browse Claude Code conversation metadata across all folders on this extension host in the Threadbox Activity Bar. Does not require Codex CLI."
+        },
+        "threadbox.claudeConfigDir": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "Claude Code config directory on this extension host. Empty follows the official extension's `CLAUDE_CONFIG_DIR`, the host environment, then `~/.claude`. Only metadata is read. To resume, this must match the official extension's directory."
+        },
         "threadbox.codexBinary": {
           "type": "string",
           "default": "",
@@ -464,6 +531,7 @@
     "test:extension": "npm run package && node scripts/test-extension.mjs"
   },
   "devDependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.283",
     "@types/vscode": "^1.96.0",
     "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.6.2",

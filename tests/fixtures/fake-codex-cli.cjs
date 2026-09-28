@@ -46,7 +46,7 @@ if (process.argv.includes('update')) {
       process.exit(9)
     }
     if (process.env.THREADBOX_FAKE_VERSION_FILE) {
-      writeFileSync(process.env.THREADBOX_FAKE_VERSION_FILE, '0.153.4\n', 'utf8')
+      writeFileSync(process.env.THREADBOX_FAKE_VERSION_FILE, (process.env.THREADBOX_FAKE_UPDATED_VERSION || '0.153.4') + '\n', 'utf8')
     }
     process.stdout.write('fake Codex update completed\n')
     process.exit(0)
